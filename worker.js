@@ -1,6 +1,6 @@
 /*
- * Tuner Proxy — Cloudflare Worker
- * ================================
+ * Tuner Proxy v2 — Cloudflare Worker
+ * ==================================
  * Fixes in the browser what the app alone cannot:
  *  1. CORS blocks (adds Access-Control-Allow-Origin)
  *  2. Mixed content (http streams become https through the worker)
@@ -17,52 +17,120 @@
  * GEO-BLOCKS: Workers exit from Cloudflare's global network (any country),
  * so this does NOT guarantee an Indian exit IP. For country-locked streams,
  * use server.js on a VPS inside that country instead (see file header there).
+ *
+ * NOTE: Workers have no DNS API, so the SSRF guard is host-string based
+ * (per redirect hop). For hard targets use the Node proxy, which also
+ * resolves and vets every IP.
  */
 
 const CONFIG = {
   // Only these site origins may use the proxy. Add your domains here.
-  // Empty array = open proxy (anyone can use it — you pay the bandwidth).
+  // Empty array + ALLOW_OPEN=false = reject everything (fail closed).
   ALLOWED_ORIGINS: ['https://sachindeepcleaning-coder.github.io'],
 
-  // Optional shared secret: requests may also pass ?token=SECRET.
-  // Leave '' to disable.
+  // Set true only if you really want an open proxy (you pay the bandwidth).
+  ALLOW_OPEN: false,
+
+  // Optional shared secret: requests may also pass ?token=SECRET
+  // or the X-Proxy-Token header. Leave '' to disable.
   SHARED_TOKEN: '',
+
+  MAX_REDIRECTS: 3,
+  FETCH_TIMEOUT_MS: 25000,
+  MAX_MANIFEST_BYTES: 5 * 1024 * 1024,
 };
 
-function corsHeaders(origin) {
-  return {
-    'Access-Control-Allow-Origin': origin || '*',
+const STRIP_HEADERS = new Set([
+  'content-security-policy',
+  'content-security-policy-report-only',
+  'x-frame-options',
+  'set-cookie',
+  'set-cookie2',
+  'access-control-allow-origin',
+  'alt-svc',
+  'strict-transport-security',
+  'location',
+  'cross-origin-opener-policy',
+  'cross-origin-embedder-policy',
+  'cross-origin-resource-policy',
+  'permissions-policy',
+  'expect-ct',
+  'report-to',
+  'nel',
+  'server',
+  'x-powered-by',
+]);
+
+function corsHeaders(origin, allowed) {
+  const h = {
     'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-    'Access-Control-Allow-Headers': 'Range, Content-Type, Accept, Origin',
+    'Access-Control-Allow-Headers': 'Range, Content-Type, Accept, Origin, X-Proxy-Token',
     'Access-Control-Max-Age': '86400',
+    'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+    'Vary': 'Origin',
+    'X-Content-Type-Options': 'nosniff',
   };
+  if (allowed && origin) h['Access-Control-Allow-Origin'] = origin;
+  return h;
 }
 
-function originAllowed(req, urlObj) {
-  if (CONFIG.ALLOWED_ORIGINS.length === 0) return true;
-  const origin = req.headers.get('Origin') || '';
-  const referer = req.headers.get('Referer') || '';
-  if (CONFIG.ALLOWED_ORIGINS.includes(origin)) return true;
-  if (CONFIG.ALLOWED_ORIGINS.some((o) => referer.startsWith(o))) return true;
-  if (CONFIG.SHARED_TOKEN && urlObj.searchParams.get('token') === CONFIG.SHARED_TOKEN) return true;
-  return false;
-}
-
-// SSRF guard: never fetch loopback / private / cloud-metadata targets.
 function isBlockedHost(hostname) {
-  const h = hostname.toLowerCase();
+  let h = String(hostname || '').toLowerCase();
+  if (h.startsWith('[') || h.includes(':')) return true;
+  while (h.endsWith('.')) h = h.slice(0, -1);
+  if (!h) return true;
   if (h === 'localhost' || h.endsWith('.localhost')) return true;
-  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(h)) {
-    const p = h.split('.').map(Number);
-    if (p[0] === 10) return true;
+  if (h === 'metadata.google.internal' || h.endsWith('.internal')) return true;
+  const bad = ['.local', '.home.arpa', '.lan', '.intranet', '.test', '.example', '.invalid', '.onion', '.arpa'];
+  for (const s of bad) {
+    if (h === s.slice(1) || h.endsWith(s)) return true;
+  }
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const p = m.slice(1).map(Number);
+    if (p.some((n) => n > 255)) return true;
+    if (p[0] === 0 || p[0] === 10 || p[0] === 127) return true;
+    if (p[0] === 169 && p[1] === 254) return true;
     if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return true;
     if (p[0] === 192 && p[1] === 168) return true;
-    if (p[0] === 127) return true;
-    if (p[0] === 169 && p[1] === 254) return true;
-    if (p[0] === 0) return true;
+    if (p[0] === 192 && p[1] === 0 && p[2] === 0) return true;
+    if (p[0] === 100 && p[1] >= 64 && p[1] <= 127) return true;
+    if (p[0] === 198 && (p[1] === 18 || p[1] === 19)) return true;
+    if (p[0] >= 224) return true;
   }
-  if (h === 'metadata.google.internal' || h.endsWith('.internal')) return true;
   return false;
+}
+
+function safeTarget(raw) {
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  if (isBlockedHost(u.hostname)) return null;
+  let authorization = '';
+  if (u.username || u.password) {
+    let user = u.username;
+    let pass = u.password;
+    try {
+      user = decodeURIComponent(user);
+      pass = decodeURIComponent(pass);
+    } catch {
+      /* keep raw */
+    }
+    let encoded = '';
+    try {
+      encoded = btoa(user + ':' + pass);
+    } catch {
+      encoded = '';
+    }
+    authorization = encoded ? 'Basic ' + encoded : '';
+    u.username = '';
+    u.password = '';
+  }
+  return { url: u.toString(), authorization };
 }
 
 function absUrl(rel, base) {
@@ -73,115 +141,199 @@ function absUrl(rel, base) {
   }
 }
 
-// Rewrite every URI in an m3u8 to route through THIS worker (absolute).
 function rewriteManifest(text, manifestUrl, selfBase) {
-  const out = text.split(/\r?\n/);
+  const out = String(text).replace(/^\uFEFF/, '').split(/\r?\n/);
   for (let i = 0; i < out.length; i++) {
-    const line = out[i];
-    if (!line) continue;
-    if (line.charAt(0) === '#') {
-      out[i] = line.replace(/URI="([^"]+)"/g, (m, u) => {
-        if (u.startsWith('data:')) return m;
-        const abs = /^(https?:)?\/\//i.test(u) ? u : absUrl(u, manifestUrl);
-        return abs ? `URI="${selfBase}${encodeURIComponent(abs)}"` : m;
+    const t = out[i].trim();
+    if (!t) continue;
+    if (t.charAt(0) === '#') {
+      out[i] = out[i].replace(/URI\s*=\s*(["'])([^"']+)\1/g, (mm, q, u) => {
+        if (/^(data|blob):/i.test(u)) return mm;
+        const abs = absUrl(u, manifestUrl);
+        return abs ? `URI=${q}${selfBase}${encodeURIComponent(abs)}${q}` : mm;
       });
     } else {
-      const t = line.trim();
-      const abs = /^(https?:)?\/\//i.test(t) ? t : absUrl(t, manifestUrl);
+      const abs = absUrl(t, manifestUrl);
       if (abs) out[i] = `${selfBase}${encodeURIComponent(abs)}`;
     }
   }
   return out.join('\n');
 }
 
+async function readCapped(body, cap) {
+  const reader = body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > cap) {
+      try {
+        await reader.cancel();
+      } catch {
+        /* ignore */
+      }
+      return null;
+    }
+    chunks.push(value);
+  }
+  const size = chunks.reduce((n, c) => n + c.byteLength, 0);
+  const merged = new Uint8Array(size);
+  let off = 0;
+  for (const c of chunks) {
+    merged.set(c, off);
+    off += c.byteLength;
+  }
+  return merged;
+}
+
 export default {
   async fetch(req) {
     const urlObj = new URL(req.url);
     const origin = req.headers.get('Origin') || '';
-    const cors = corsHeaders(CONFIG.ALLOWED_ORIGINS.includes(origin) ? origin : '*');
+    const referer = req.headers.get('Referer') || '';
+    const token = req.headers.get('X-Proxy-Token') || urlObj.searchParams.get('token') || '';
 
     if (req.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: cors });
+      return new Response(null, { status: 204, headers: corsHeaders(origin, true) });
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
-      return new Response('Only GET/HEAD', { status: 405, headers: cors });
+      return new Response('Only GET/HEAD', { status: 405, headers: corsHeaders(origin, true) });
+    }
+
+    let refOrigin = '';
+    try {
+      refOrigin = referer ? new URL(referer).origin : '';
+    } catch {
+      refOrigin = '';
+    }
+    const allowed =
+      CONFIG.ALLOW_OPEN ||
+      (CONFIG.SHARED_TOKEN && token === CONFIG.SHARED_TOKEN) ||
+      CONFIG.ALLOWED_ORIGINS.includes(origin) ||
+      (refOrigin && CONFIG.ALLOWED_ORIGINS.includes(refOrigin));
+    const cors = corsHeaders(origin, !!allowed);
+    if (!allowed) {
+      return new Response('Origin not allowed — set ALLOWED_ORIGINS in the worker', { status: 403, headers: cors });
     }
 
     const target = urlObj.searchParams.get('url');
     if (!target) {
       return new Response('Usage: ?url=<encoded-stream-url>', { status: 400, headers: cors });
     }
-    let dest;
+    if (target.length > 8000) {
+      return new Response('url too long', { status: 400, headers: cors });
+    }
+
+    const ac = new AbortController();
+    const killer = setTimeout(() => {
+      try {
+        ac.abort();
+      } catch {
+        /* ignore */
+      }
+    }, CONFIG.FETCH_TIMEOUT_MS);
+
     try {
-      dest = new URL(target);
+      let hop = safeTarget(target);
+      if (!hop) return new Response('Blocked target', { status: 403, headers: cors });
+
+      let method = req.method;
+      let up = null;
+      for (let i = 0; i <= CONFIG.MAX_REDIRECTS; i++) {
+        const fwd = new Headers();
+        for (const h of ['range', 'accept', 'accept-language', 'if-range', 'if-none-match', 'if-modified-since']) {
+          const v = req.headers.get(h);
+          if (v) fwd.set(h, v);
+        }
+        fwd.set('User-Agent', req.headers.get('User-Agent') || 'Mozilla/5.0 (compatible; TunerProxy/2.0)');
+        fwd.set('Accept-Encoding', 'identity');
+        if (hop.authorization) fwd.set('Authorization', hop.authorization);
+
+        up = await fetch(hop.url, { method, headers: fwd, redirect: 'manual', signal: ac.signal });
+
+        const isRedirect = up.status >= 300 && up.status < 400 && up.headers.get('Location');
+        if (!isRedirect) break;
+        if (i === CONFIG.MAX_REDIRECTS) {
+          try {
+            if (up.body) await up.body.cancel();
+          } catch {
+            /* ignore */
+          }
+          return new Response('Too many redirects', { status: 502, headers: cors });
+        }
+        let loc = null;
+        try {
+          loc = new URL(up.headers.get('Location'), hop.url).toString();
+        } catch {
+          loc = null;
+        }
+        const nextHop = loc ? safeTarget(loc) : null;
+        try {
+          if (up.body) await up.body.cancel();
+        } catch {
+          /* ignore */
+        }
+        if (!nextHop) return new Response('Blocked redirect target', { status: 403, headers: cors });
+        let sameOrigin = false;
+        try {
+          sameOrigin = new URL(hop.url).origin === new URL(nextHop.url).origin;
+        } catch {
+          sameOrigin = false;
+        }
+        nextHop.authorization = sameOrigin ? hop.authorization : '';
+        hop = nextHop;
+        if (up.status === 303) method = 'GET';
+      }
+
+      if (!up) return new Response('Upstream fetch failed', { status: 502, headers: cors });
+
+      const resHeaders = new Headers();
+      up.headers.forEach((v, k) => {
+        if (!STRIP_HEADERS.has(k.toLowerCase())) resHeaders.set(k, v);
+      });
+      for (const [k, v] of Object.entries(cors)) resHeaders.set(k, v);
+
+      const finalUrl = up.url || hop.url;
+      let pathname = '';
+      try {
+        pathname = new URL(finalUrl).pathname;
+      } catch {
+        pathname = '';
+      }
+      const ct = (up.headers.get('content-type') || '').toLowerCase();
+      const ctManifest = /mpegurl|vnd\.apple/i.test(ct);
+      const pathManifest = /\.m3u8?$/i.test(pathname);
+      const textLike = /^text\//i.test(ct);
+      const maybeText = ctManifest || pathManifest || textLike;
+      const clen = Number.parseInt(up.headers.get('content-length') || '0', 10) || 0;
+      const canBuffer = clen === 0 || clen <= CONFIG.MAX_MANIFEST_BYTES;
+
+      if (req.method === 'GET' && maybeText && up.status !== 206 && up.status < 400 && canBuffer && up.body) {
+        const buf = await readCapped(up.body, CONFIG.MAX_MANIFEST_BYTES);
+        if (buf) {
+          const text = new TextDecoder('utf-8').decode(buf);
+          if (/^\uFEFF?#EXTM3U/.test(text)) {
+            const selfBase = `${urlObj.origin}${urlObj.pathname}?url=`;
+            const rewritten = rewriteManifest(text, finalUrl, selfBase);
+            for (const k of ['content-length', 'content-encoding', 'etag', 'last-modified', 'expires', 'accept-ranges', 'content-range']) {
+              resHeaders.delete(k);
+            }
+            resHeaders.set('content-type', 'application/vnd.apple.mpegurl');
+            resHeaders.set('cache-control', 'no-store');
+            return new Response(rewritten, { status: up.status, headers: resHeaders });
+          }
+          resHeaders.set('content-length', String(buf.byteLength));
+          return new Response(buf, { status: up.status, headers: resHeaders });
+        }
+      }
+
+      return new Response(req.method === 'HEAD' ? null : up.body, { status: up.status, headers: resHeaders });
     } catch {
-      return new Response('Bad url param', { status: 400, headers: cors });
+      return new Response('Upstream fetch failed', { status: 502, headers: cors });
+    } finally {
+      clearTimeout(killer);
     }
-    if (dest.protocol !== 'http:' && dest.protocol !== 'https:') {
-      return new Response('Only http/https targets', { status: 400, headers: cors });
-    }
-    if (isBlockedHost(dest.hostname)) {
-      return new Response('Blocked target', { status: 403, headers: cors });
-    }
-    if (!originAllowed(req, urlObj)) {
-      return new Response('Origin not allowed — set ALLOWED_ORIGINS in the worker', {
-        status: 403,
-        headers: cors,
-      });
-    }
-
-    // Forward range/accept so seeking and quality selection keep working.
-    const fwd = new Headers();
-    for (const h of ['range', 'accept', 'accept-language']) {
-      const v = req.headers.get(h);
-      if (v) fwd.set(h, v);
-    }
-    fwd.set('User-Agent', 'Mozilla/5.0 (compatible; TunerProxy/1.0)');
-    fwd.delete('cookie');
-    fwd.delete('authorization');
-
-    let up;
-    try {
-      up = await fetch(dest.toString(), {
-        method: req.method,
-        headers: fwd,
-        redirect: 'follow',
-      });
-    } catch (e) {
-      return new Response('Upstream fetch failed: ' + (e && e.message), {
-        status: 502,
-        headers: cors,
-      });
-    }
-
-    const resHeaders = new Headers(up.headers);
-    for (const [k, v] of Object.entries(cors)) resHeaders.set(k, v);
-    // Strip headers that break proxied playback
-    for (const h of [
-      'content-security-policy',
-      'content-security-policy-report-only',
-      'x-frame-options',
-      'access-control-allow-origin',
-    ]) {
-      resHeaders.delete(h);
-    }
-
-    const ct = up.headers.get('content-type') || '';
-    const isManifest =
-      /mpegurl|vnd\.apple/i.test(ct) || /\.m3u8($|[?#])/i.test(dest.pathname);
-
-    if (isManifest && req.method === 'GET') {
-      const text = await up.text();
-      const selfBase = `${urlObj.origin}${urlObj.pathname}?url=`;
-      const rewritten = rewriteManifest(text, dest.toString(), selfBase);
-      resHeaders.set('content-type', 'application/vnd.apple.mpegurl');
-      resHeaders.delete('content-length');
-      return new Response(rewritten, { status: up.status, headers: resHeaders });
-    }
-
-    return new Response(req.method === 'HEAD' ? null : up.body, {
-      status: up.status,
-      headers: resHeaders,
-    });
   },
 };

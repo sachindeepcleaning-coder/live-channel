@@ -1,1 +1,24 @@
-{"background_color": "#0b0d12", "display": "standalone", "icons": [{"sizes": "192x192", "src": "icon-192.png", "type": "image/png"}, {"purpose": "any", "sizes": "512x512", "src": "icon-512.png", "type": "image/png"}, {"sizes": "any", "src": "icon.svg", "type": "image/svg+xml"}], "name": "Tuner — IPTV Player", "short_name": "Tuner", "start_url": "./index.html", "theme_color": "#0b0d12"}
+{
+  "id": "./",
+  "name": "Tuner — IPTV Player",
+  "short_name": "Tuner",
+  "description": "Free live TV in your browser: thousands of IPTV channels, a TV guide, favorites, and built-in stream fixing.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "background_color": "#0b0d12",
+  "theme_color": "#0b0d12",
+  "display": "standalone",
+  "orientation": "any",
+  "categories": ["entertainment", "video", "utilities"],
+  "launch_handler": { "client_mode": "navigate-existing" },
+  "icons": [
+    { "sizes": "192x192", "src": "icon-192.png", "type": "image/png" },
+    { "purpose": "any", "sizes": "512x512", "src": "icon-512.png", "type": "image/png" },
+    { "sizes": "any", "src": "icon.svg", "type": "image/svg+xml" }
+  ],
+  "shortcuts": [
+    { "name": "TV Guide", "short_name": "Guide", "description": "What's on now", "url": "./index.html#tab=guide" },
+    { "name": "Favorites", "short_name": "Favorites", "description": "Your saved channels", "url": "./index.html#tab=fav" },
+    { "name": "History", "short_name": "History", "description": "Recently watched", "url": "./index.html#tab=recent" }
+  ]
+}

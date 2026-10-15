@@ -1,13 +1,15 @@
-/* Tuner offline shell — caches the app shell only. Playlists, API data,
-   stream manifests and segments always go to network (never cached). */
-const CACHE = 'tuner-shell-v1';
-const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon.svg'];
+/* Tuner offline shell v3 — network-first navigations, stale-while-revalidate
+   for the precached shell only. Playlists, EPG, manifests, segments and
+   anything cross-origin always go straight to the network. */
+const CACHE = 'tuner-shell-v3';
+const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png', './hls.min.js'];
+const SHELL_PATHS = new Set(['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/hls.min.js']);
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches
       .open(CACHE)
-      .then((c) => c.addAll(SHELL))
+      .then((c) => Promise.all(SHELL.map((u) => c.add(u).catch(() => {}))))
       .then(() => self.skipWaiting())
       .catch(() => {})
   );
@@ -22,24 +24,51 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET') return;
-  const u = new URL(e.request.url);
-  if (u.origin !== self.location.origin) return; // streams, fonts, APIs: network only
-  if (/\.(m3u8?|ts|m4s|mp4|key)(\?|#|$)/i.test(u.pathname)) return; // live media
-  if (u.pathname.endsWith('.m3u') || u.pathname.includes('/api/')) return;
-  e.respondWith(
-    caches.match(e.request).then((hit) => {
-      const net = fetch(e.request)
-        .then((r) => {
-          if (r && r.ok) {
-            const c = r.clone();
-            caches.open(CACHE).then((cc) => cc.put(e.request, c));
-          }
-          return r;
-        })
-        .catch(() => hit);
-      return hit || net;
+const INDEX_KEY = new Request(new URL('./index.html', self.location.href), { cache: 'reload' });
+
+function isShell(u) {
+  return SHELL_PATHS.has(u.pathname) || u.pathname.endsWith('/index.html');
+}
+
+async function networkFirst(req) {
+  try {
+    const r = await fetch(req);
+    if (r && r.ok && r.type === 'basic' && !r.redirected) {
+      const copy = r.clone();
+      caches.open(CACHE).then((c) => c.put(INDEX_KEY, copy)).catch(() => {});
+    }
+    return r;
+  } catch (err) {
+    const hit = await caches.match(INDEX_KEY, { ignoreSearch: true });
+    const root = hit || (await caches.match('./', { ignoreSearch: true }));
+    return root || Response.error();
+  }
+}
+
+async function staleWhileRevalidate(req) {
+  const cache = await caches.open(CACHE);
+  const cached = await cache.match(req, { ignoreSearch: true });
+  const net = fetch(req)
+    .then((r) => {
+      if (r && r.status === 200 && r.type === 'basic' && !r.redirected) {
+        const copy = r.clone();
+        cache.put(req, copy).catch(() => {});
+      }
+      return r;
     })
-  );
+    .catch(() => cached);
+  return cached || net;
+}
+
+self.addEventListener('fetch', (e) => {
+  const req = e.request;
+  if (req.method !== 'GET' || req.headers.get('Range')) return;
+  const u = new URL(req.url);
+  if (u.origin !== self.location.origin) return;
+  if (req.mode === 'navigate') {
+    e.respondWith(networkFirst(req));
+    return;
+  }
+  if (!isShell(u)) return;
+  e.respondWith(staleWhileRevalidate(req));
 });
