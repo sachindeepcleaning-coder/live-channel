@@ -284,6 +284,10 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
 #toast.show{pointer-events:auto}
 #toast button{border:0;background:transparent;color:var(--blue);font-weight:700;padding:2px 6px;min-height:32px;flex-shrink:0}
 .mini-btn{border:1px solid var(--line);background:var(--surface2);color:var(--muted);border-radius:8px;font-size:12px;padding:4px 10px;min-height:30px}
+a.mini-btn{text-decoration:none;display:inline-flex;align-items:center}
+a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+a.nav-item{text-decoration:none}
+.home-foot{display:flex;justify-content:center;margin:28px 0 6px}
 .mini-btn:hover{color:var(--text);border-color:var(--blue)}
 .rail .card{position:relative}
 .mini-x{position:absolute;right:6px;top:6px;width:30px;height:30px;border-radius:50%;border:0;background:#000a;color:#aab4c4;font-size:13px;line-height:1;z-index:2}
@@ -359,6 +363,7 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
     <div class="nav-sep"></div>
     <div class="nav-head">Library</div>
     <button class="nav-item" data-nav="settings"><span class="ni-ico">⚙️</span>Sources &amp; proxy</button>
+    <a class="nav-item" data-apk-dl href="Tuner-v2.0.0-debug.apk" download><span class="ni-ico">📱</span>Android app (APK)</a>
     <div class="drawer-foot" id="drawerFoot">Loading…</div>
   </aside>
   <div id="scrim"></div>
@@ -384,6 +389,7 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
       <div class="home-empty" id="homeEmpty" hidden></div>
       <button class="btn ghost" id="moreBtn">Show more</button>
       <div id="gridSentinel" aria-hidden="true"></div>
+      <div class="home-foot" data-apk-dl><a class="mini-btn" href="Tuner-v2.0.0-debug.apk" download>📱 Get the Android app</a></div>
     </div>
   </main>
 
@@ -525,6 +531,13 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
         <button class="btn ghost" id="favImport">Import</button>
       </div>
       <input id="favFile" type="file" accept=".json,application/json" hidden />
+    </div>
+    <div class="field" data-apk-dl>
+      <label>Android app</label>
+      <div class="row">
+        <a class="btn" href="Tuner-v2.0.0-debug.apk" download data-apk-label>⬇ Download APK</a>
+      </div>
+      <small style="color:var(--muted);font-size:12px">Same Tuner, installed — no browser needed. Allow "install from unknown sources" if asked.</small>
     </div>
     <div class="faq">
       <details><summary>Why do channels fail?</summary><p>Three usual causes: the link is dead (404), the source server is down (5xx), or the browser is blocked — CORS, mixed-content (http on an https page), hotlink protection, or geo-blocking (403). The player retries via proxy automatically and tells you which one it found.</p></details>
@@ -2338,6 +2351,13 @@ addCountryOptions(FALLBACK_COUNTRIES.map(function(f){return {code:f[0],name:f[1]
 addLangOptions();
 bindCards(grid);bindCards(rail);
 $('currentName').setAttribute('tabindex','-1');
+try{
+  if(/appassets\.androidplatform\.net/i.test(location.host)){
+    document.querySelectorAll('[data-apk-dl]').forEach(function(el){el.hidden=true;});
+  }else{
+    document.querySelectorAll('[data-apk-label]').forEach(function(el){el.textContent='⬇ Download APK (v'+APP_VERSION+')';});
+  }
+}catch(e){}
 syncCountrySelect(urlInput.value);
 showView('home');
 try{
