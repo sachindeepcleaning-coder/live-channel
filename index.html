@@ -81,6 +81,11 @@ button{cursor:pointer}
 .home-inner{max-width:1500px;margin:0 auto}
 .home-title{font-family:var(--font-d);font-weight:800;font-size:clamp(22px,3vw,30px);margin:4px 0 2px;letter-spacing:.3px}
 .home-sub{color:var(--muted);font-size:13.5px;margin:0 0 16px}
+.geo-banner{display:flex;align-items:center;gap:10px;background:#2a1a12;border:1px solid #7c4a1e;border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:16px}
+.geo-banner[hidden]{display:none}
+.geo-banner span{flex:1}
+.geo-banner .btn{min-height:36px;padding:6px 14px;font-size:13px}
+.geo-banner .icon-btn{width:32px;height:32px;font-size:14px}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:22px}
 .stat{background:linear-gradient(180deg,var(--surface2),var(--surface));border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;position:relative;overflow:hidden}
 .stat::after{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent);opacity:.85}
@@ -268,6 +273,7 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
     <div class="home-inner">
       <h2 class="home-title" id="homeTitle">📡 What to watch?</h2>
       <p class="home-sub" id="homeSub">Live TV dashboard — pick a channel to start.</p>
+      <div class="geo-banner" id="geoBanner" hidden><span id="geoText"></span><button class="btn ghost" id="geoSetup">Fix</button><button class="icon-btn" id="geoX" aria-label="Dismiss">✕</button></div>
       <div class="stats">
         <div class="stat"><b id="statChannels">–</b><span>channels loaded</span></div>
         <div class="stat"><b id="statCats">–</b><span>categories</span></div>
@@ -372,6 +378,7 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
         <option value="custom">Custom…</option>
       </select>
       <input id="proxyCustom" type="text" placeholder="https://my-worker.dev/?url=" style="display:none" aria-label="Custom proxy prefix" />
+      <small style="color:var(--muted);font-size:12px">Geo-blocked? Streams check the exit IP — public proxies are US/EU. For country-locked streams use Custom with your own worker/VPS in that country, or a VPN.</small>
     </div>
     <label class="switch"><span>Auto-retry failed channels via proxy</span><input type="checkbox" id="autoProxy" checked /></label>
     <label class="switch"><span>Show channels that failed this session</span><input type="checkbox" id="showFailed" /></label>
@@ -777,9 +784,61 @@ function onFatal(ch,detail,viaProxy,playUrl){
   setOv('bufferOv',false);
   $('errorDetail').textContent=detail;
   setOv('errorOv',true);
+  classifyFailure(ch,detail);
   updateCounts();
   if(view==='home')renderHome(false);else if(!showFailedEl.checked)renderList();
   if(autoSkipEl.checked){toast('Offline — skipping…');setTimeout(function(){if(currentUrl===ch.url)step(1);},1200);}
+}
+/* ---------- geo region + failure diagnosis ---------- */
+var userCC=null,userCountry='';
+var CC_NAMES={in:'India',us:'USA',uk:'UK',ca:'Canada',au:'Australia',pk:'Pakistan',bd:'Bangladesh',ae:'UAE',sa:'Saudi Arabia',de:'Germany',fr:'France',it:'Italy',es:'Spain'};
+function ccName(c){return CC_NAMES[c]||c.toUpperCase();}
+function playlistCC(){
+  var u=String(urlInput.value||'').toLowerCase();
+  var m=u.match(/\/countries\/([a-z]{2})\.m3u/);
+  if(m)return m[1];
+  if(u.indexOf('/index.m3u')>0)return 'world';
+  return '';
+}
+function updateGeoUI(){
+  var b=$('geoBanner'),pcc=playlistCC();
+  if(pcc&&pcc!=='world'&&userCC&&pcc!==userCC){
+    $('geoText').textContent='You appear to be in '+userCountry+' — '+ccName(pcc)+'-only streams may be geo-blocked here. A VPN or a '+ccName(pcc)+'-based proxy (Settings → Custom) fixes most of them.';
+    b.hidden=false;
+  }else b.hidden=true;
+}
+function detectRegion(){
+  fetch('https://ipwho.is/').then(function(r){return r.json();}).then(function(j){
+    if(j&&(j.success===true||j.country_code)&&j.country_code){userCC=String(j.country_code).toLowerCase();userCountry=j.country||userCC.toUpperCase();updateGeoUI();}
+  }).catch(function(){});
+}
+$('geoSetup').onclick=function(){openSettings();};
+$('geoX').onclick=function(){$('geoBanner').hidden=true;};
+/* Probe the failed stream through the proxy and read the HTTP status (headers only,
+   body cancelled) to tell geo-block/hotlink apart from dead links and outages. */
+function classifyFailure(ch,base){
+  var d=$('errorDetail');
+  if(!getProxyPrefix()){d.textContent=base+' · Tip: enable a proxy in Settings to auto-diagnose geo-block vs dead link.';return;}
+  d.textContent=base+' · Checking why…';
+  var ctrl=null;
+  try{ctrl=new AbortController();}catch(e){}
+  var timer=setTimeout(function(){try{if(ctrl)ctrl.abort();}catch(e){}if(ch.url===currentUrl)d.textContent=base+' · No response — source is offline or unreachable.';},9000);
+  var opts={method:'GET',cache:'no-store'};if(ctrl)opts.signal=ctrl.signal;
+  fetch(buildProxiedUrl(ch.url),opts).then(function(r){
+    clearTimeout(timer);
+    if(ch.url!==currentUrl)return;
+    try{if(r.body&&r.body.cancel)r.body.cancel();}catch(e){}
+    var extra='';
+    if(r.status===403||r.status===451)extra='Server refused ('+r.status+') — likely GEO-BLOCK or hotlink protection. Fix: VPN or an in-country proxy (Settings → Custom).';
+    else if(r.status===404||r.status===410)extra='Server says not found ('+r.status+') — this link is dead. Hit Next ⏭.';
+    else if(r.status>=500)extra='Source server error ('+r.status+') — try again later or Next.';
+    else extra='Unexpected status ('+r.status+') — try Next or another channel.';
+    d.textContent=base+' · '+extra;
+  }).catch(function(){
+    clearTimeout(timer);
+    if(ch.url!==currentUrl)return;
+    d.textContent=base+' · Unreachable through the proxy too — source offline or the proxy blocked it.';
+  });
 }
 function playChannel(ch,forceProxy){
   if(!ch)return;
@@ -911,7 +970,7 @@ function loadText(text,label){
 }
 function loadUrl(url){
   if(!url)return;
-  showSkeleton();sset('iptv_url',url);syncCountrySelect(url);
+  showSkeleton();sset('iptv_url',url);syncCountrySelect(url);updateGeoUI();
   fetch(url).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();})
    .then(function(t){loadText(t,url);})
    .catch(function(e){
@@ -995,6 +1054,7 @@ addCountryOptions(FALLBACK_COUNTRIES.map(function(f){return {code:f[0],name:f[1]
 bindCards(grid);bindCards(rail);
 syncCountrySelect(urlInput.value);
 showView('home');
+detectRegion();
 loadUrl(urlInput.value.trim());
 })();
 </script>
