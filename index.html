@@ -79,6 +79,16 @@ kbd{background:var(--bg);border:1px solid var(--line);border-bottom-width:2px;bo
 .tab.on{color:var(--text);border-bottom-color:var(--accent)}
 .chips{display:flex;gap:8px;padding:10px;overflow-x:auto;scrollbar-width:none;flex-shrink:0;-webkit-overflow-scrolling:touch}
 .chips::-webkit-scrollbar{display:none}
+.chips-row{display:flex;align-items:center;gap:2px;flex-shrink:0}
+.chips-row .chips{flex:1;min-width:0}
+.chip-nav{display:none;width:34px;height:34px;flex-shrink:0;border-radius:50%;border:1px solid var(--line);background:var(--surface2);color:var(--text);font-size:14px;line-height:1}
+.chip-nav:hover{border-color:var(--accent)}
+@media (min-width:900px){
+  .chip-nav{display:block}
+  .chips{scrollbar-width:thin}
+  .chips::-webkit-scrollbar{display:block;height:6px}
+  .chips::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+}
 .chip{flex-shrink:0;border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:6px 14px;font-size:13px;color:var(--muted);min-height:34px}
 .chip.on{background:var(--accent-soft);border-color:var(--accent);color:#fff}
 .chip small{opacity:.6;margin-left:4px}
@@ -205,7 +215,11 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
       <button class="tab" role="tab" aria-selected="false" data-tab="fav">★ Favorites</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="recent">🕘 Recent</button>
     </div>
-    <div class="chips" id="chips" aria-label="Categories"></div>
+    <div class="chips-row">
+      <button class="chip-nav" id="chipLeft" aria-label="Scroll categories left">◀</button>
+      <div class="chips" id="chips" aria-label="Categories"></div>
+      <button class="chip-nav" id="chipRight" aria-label="Scroll categories right">▶</button>
+    </div>
     <div class="list-info"><span id="counts">Loading…</span><span id="failedInfo"></span></div>
     <div id="listWrap" role="listbox" aria-label="Channel list" tabindex="0">
       <div id="listSpacer"></div>
@@ -416,6 +430,12 @@ chipsEl.addEventListener('click',function(e){
   var b=e.target.closest('.chip');if(!b)return;
   group=b.dataset.g;applyFilters(true);
 });
+function scrollChips(d){var amt=chipsEl.clientWidth*0.7||300;try{chipsEl.scrollBy({left:d*amt,behavior:'smooth'});}catch(e){chipsEl.scrollLeft+=d*amt;}}
+$('chipLeft').onclick=function(){scrollChips(-1);};
+$('chipRight').onclick=function(){scrollChips(1);};
+chipsEl.addEventListener('wheel',function(e){
+  if(Math.abs(e.deltaY)>Math.abs(e.deltaX)&&chipsEl.scrollWidth>chipsEl.clientWidth){e.preventDefault();chipsEl.scrollLeft+=e.deltaY;}
+},{passive:false});
 document.querySelectorAll('.tab').forEach(function(b){
   b.addEventListener('click',function(){
     tab=b.dataset.tab;group='';
@@ -445,6 +465,67 @@ function buildProxiedUrl(url){
   var l=pre.slice(-1);if(l!=='/'&&l!=='?'&&l!=='=')pre+='/';
   return pre+url;
 }
+function resolveUrl(rel,base){try{return new URL(rel,base).href;}catch(e){return null;}}
+/* Rewrite every URI inside an m3u8 (variant playlists, segments, keys, maps, audio/subs)
+   to absolute URLs routed through the proxy. Without this, a dumb ?url= proxy breaks
+   multi-level HLS: relative entries would resolve against https://proxy/ instead of the real host. */
+function rewriteManifest(text,manifestUrl){
+  var out=text.split(/\r?\n/);
+  for(var i=0;i<out.length;i++){
+    var line=out[i];
+    if(!line)continue;
+    if(line.charAt(0)==='#'){
+      out[i]=line.replace(/URI="([^"]+)"/g,function(m,u){
+        if(u.indexOf('data:')===0)return m;
+        var abs=/^(https?:)?\/\//i.test(u)?u:resolveUrl(u,manifestUrl);
+        return abs?('URI="'+buildProxiedUrl(abs)+'"'):m;
+      });
+    }else{
+      var t=line.trim();
+      if(/^(https?:)?\/\//i.test(t))out[i]=buildProxiedUrl(t);
+      else{var a2=resolveUrl(t,manifestUrl);if(a2)out[i]=buildProxiedUrl(a2);}
+    }
+  }
+  return out.join('\n');
+}
+/* Custom hls.js loader used ONLY in proxy mode. Fetches playlists + segments through the
+   proxy, rewriting nested manifests on the fly so relative URLs keep working. */
+function ProxyLoader(cfg){this.config=cfg||{};this.aborted=false;this.ctrl=null;}
+ProxyLoader.prototype.abort=function(){this.aborted=true;try{if(this.ctrl)this.ctrl.abort();}catch(e){}};
+ProxyLoader.prototype.destroy=function(){this.abort();this.ctrl=null;};
+ProxyLoader.prototype.load=function(context,config,callbacks){
+  var self=this;self.aborted=false;
+  var t0=(typeof performance!=='undefined'&&performance.now)?performance.now():Date.now();
+  var target=buildProxiedUrl(context.url);
+  var ctrl=null;
+  try{ctrl=new AbortController();self.ctrl=ctrl;}catch(e){ctrl=null;}
+  var opts={};if(ctrl)opts.signal=ctrl.signal;
+  fetch(target,opts).then(function(r){
+    if(self.aborted)throw {aborted:true};
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return r.arrayBuffer();
+  }).then(function(buf){
+    if(self.aborted)return;
+    var now=function(){return (typeof performance!=='undefined'&&performance.now)?performance.now():Date.now();};
+    var data=buf,isManifest=false;
+    try{
+      var head=new Uint8Array(buf.slice(0,7)),s='';
+      for(var i=0;i<head.length;i++)s+=String.fromCharCode(head[i]);
+      if(s.indexOf('#EXTM3U')===0)isManifest=true;
+    }catch(e){}
+    if(isManifest){
+      var text=null;
+      try{text=new TextDecoder().decode(buf);}catch(e){text=null;}
+      if(text!=null)data=rewriteManifest(text,context.url);
+    }
+    var t1=now();
+    var stats={trequest:t0,tfirst:t1,tload:t1,loaded:buf.byteLength,total:buf.byteLength,retry:0};
+    callbacks.onSuccess({url:context.url,data:data},stats,context);
+  }).catch(function(e){
+    if(self.aborted)return;
+    callbacks.onError({code:0,text:String((e&&e.message)||'load error')},context);
+  });
+};
 function setMeta(ch,viaProxy){
   $('meta').textContent=[ch.group,ch.tvgId].filter(Boolean).join(' · ')||ch.url;
   $('proxyPill').hidden=!viaProxy;
@@ -458,7 +539,9 @@ function startStream(playUrl,ch,viaProxy){
   setOv('bufferOv',true);
   if(isHls(ch.url)||isHls(playUrl)){
     if(window.Hls&&Hls.isSupported()){
-      hls=new Hls({maxBufferLength:30,enableWorker:true});
+      var hlsCfg={maxBufferLength:30,enableWorker:true};
+      if(viaProxy){hlsCfg.loader=ProxyLoader;hlsCfg.pLoader=ProxyLoader;hlsCfg.fLoader=ProxyLoader;}
+      hls=new Hls(hlsCfg);
       hls.loadSource(playUrl);hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED,function(){video.play().catch(function(e){playRejected(e,ch,viaProxy,playUrl);});});
       hls.on(Hls.Events.ERROR,function(ev,d){
