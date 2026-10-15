@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#0b0d12" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📺</text></svg>" />
+<link rel="manifest" href="manifest.webmanifest" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="apple-touch-icon" href="icon-192.png" />
 <title>Tuner — IPTV Player</title>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -207,6 +212,13 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
 .switch input{width:22px;height:22px;accent-color:var(--accent)}
 .file-btn{display:block;text-align:center;padding:11px;border:1px dashed var(--line);border-radius:10px;cursor:pointer;color:var(--muted)}
 .file-btn:hover{border-color:var(--accent);color:var(--text)}
+.welcome-steps{margin:0 0 14px;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
+.welcome-steps li{display:flex;gap:10px;align-items:flex-start;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13.5px}
+.welcome-steps li b{flex-shrink:0;width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:13px}
+.faq{border-top:1px solid var(--line);margin-top:4px}
+.faq details{border-bottom:1px solid var(--line);padding:10px 2px}
+.faq summary{cursor:pointer;font-weight:600;font-size:14px}
+.faq p{color:var(--muted);font-size:13px;margin:8px 0 2px}
 
 #toast{position:fixed;left:50%;bottom:calc(76px + var(--safe-b));transform:translate(-50%,30px);background:#232b3a;border:1px solid var(--line);padding:10px 16px;border-radius:999px;opacity:0;pointer-events:none;transition:.25s;z-index:60;font-size:13.5px;max-width:90vw}
 #toast.show{opacity:1;transform:translate(-50%,0)}
@@ -383,6 +395,26 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
     <label class="switch"><span>Auto-retry failed channels via proxy</span><input type="checkbox" id="autoProxy" checked /></label>
     <label class="switch"><span>Show channels that failed this session</span><input type="checkbox" id="showFailed" /></label>
     <label class="switch"><span>Auto-skip to next channel on failure</span><input type="checkbox" id="autoSkip" /></label>
+    <div class="faq">
+      <details><summary>Why do channels fail?</summary><p>Three usual causes: the link is dead (404), the source server is down (5xx), or the browser is blocked — CORS, mixed-content (http on an https page), hotlink protection, or geo-blocking (403). The player retries via proxy automatically and tells you which one it found.</p></details>
+      <details><summary>Geo-blocked? (403 on everything)</summary><p>Streams check your exit IP. Public proxies exit in the US/EU, so country-locked channels still fail. Fix: a VPN, or your own proxy in that country (server.js on a VPS there → Custom proxy here).</p></details>
+      <details><summary>Buffering or slow?</summary><p>Live sources vary by time of day. Try Next for another channel in the same category, or retry via proxy — sometimes the proxy route is faster.</p></details>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="welcome">
+  <div class="sheet">
+    <h2>📺 Welcome to Tuner</h2>
+    <ul class="welcome-steps">
+      <li><b>1</b><span>Pick a country playlist in Setup (⚙️) — India loads by default. Or open a local .m3u file.</span></li>
+      <li><b>2</b><span>Browse the dashboard, filter by category, tap any card to watch.</span></li>
+      <li><b>3</b><span>Dead channel? The player auto-retries via proxy and tells you why — geo-block, dead link, or outage. Star channels to keep them.</span></li>
+    </ul>
+    <div class="row">
+      <button class="btn" id="welcomeGo">Start watching</button>
+      <button class="btn ghost" id="welcomeSetup">Open setup</button>
+    </div>
   </div>
 </dialog>
 
@@ -420,6 +452,8 @@ if(sget('iptv_autoproxy')==='0')autoProxyEl.checked=false;
 
 function openSettings(){try{if(settings.showModal){settings.showModal();}else{settings.setAttribute('open','');}}catch(e){try{settings.setAttribute('open','');}catch(_){}}}
 function closeSettings(){try{settings.close();}catch(e){try{settings.removeAttribute('open');}catch(_){}}}
+function openWelcome(){var w=$('welcome');try{if(w.showModal)w.showModal();else w.setAttribute('open','');}catch(e){try{w.setAttribute('open','');}catch(_){}}}
+function closeWelcome(){var w=$('welcome');try{w.close();}catch(e){try{w.removeAttribute('open');}catch(_){}}try{sset('tuner_seen','1');}catch(_){}}
 
 /* ---------- views / nav ---------- */
 function showView(v){
@@ -544,7 +578,7 @@ function updateCounts(){
   var srcName='Custom playlist';
   if(src.indexOf('/countries/')>0)srcName=src.split('/countries/')[1].split('.')[0].toUpperCase()+' playlist';
   else if(src.indexOf('/index.m3u')>0)srcName='World playlist';
-  $('drawerFoot').textContent=allChannels.length+' channels · '+srcName;
+  $('drawerFoot').textContent=allChannels.length+' channels · '+srcName+' · v'+APP_VERSION;
   var titles={all:'🔥 All channels',fav:'⭐ Favorites',recent:'🕘 Recently watched'};
   $('gridTitle').textContent=titles[tab]||'🔥 All channels';
   $('homeTitle').textContent=tab==='fav'?'⭐ Your favorites':tab==='recent'?'🕘 Watch history':'📡 What to watch?';
@@ -910,11 +944,19 @@ $('retryBtn').onclick=$('proxyBtn').onclick=function(){
   playChannel(currentChannel,true);
 };
 $('copyBtn').onclick=function(){
-  if(!currentUrl)return;
-  var done=function(){toast('Stream URL copied');};
-  if(navigator.clipboard)navigator.clipboard.writeText(currentUrl).then(done,function(){toast('Copy failed');});
-  else{var t=document.createElement('textarea');t.value=currentUrl;document.body.appendChild(t);t.select();try{document.execCommand('copy');done();}catch(e){toast('Copy failed');}t.remove();}
+  if(!currentUrl||!currentChannel)return;
+  if(navigator.share){
+    navigator.share({title:currentChannel.name,text:currentChannel.name+' — live on Tuner',url:currentUrl}).catch(function(e){if(e&&e.name!=='AbortError')copyFallback();});
+    return;
+  }
+  copyFallback();
 };
+function copyFallback(){
+  var done=function(){toast('Stream URL copied');};
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(currentUrl).then(done,function(){toast('Copy failed');});return;}
+  try{var t=document.createElement('textarea');t.value=currentUrl;document.body.appendChild(t);t.select();document.execCommand('copy');done();t.remove();}
+  catch(e){toast('Copy failed');}
+}
 $('fsBtn').onclick=function(){
   try{
     if(video.webkitEnterFullscreen&&!videoWrap.requestFullscreen){video.webkitEnterFullscreen();return;}
@@ -994,6 +1036,9 @@ $('fileLabel').addEventListener('keydown',function(e){if(e.key==='Enter'||e.key=
 /* ---------- settings ---------- */
 $('settingsBtn').onclick=function(){openSettings();};
 $('closeSettings').onclick=function(){closeSettings();};
+$('welcomeGo').onclick=function(){closeWelcome();};
+$('welcomeSetup').onclick=function(){closeWelcome();openSettings();};
+$('welcome').addEventListener('click',function(e){if(e.target===$('welcome'))closeWelcome();});
 settings.addEventListener('click',function(e){if(e.target===settings)closeSettings();});
 function syncProxyUI(){proxyCustom.style.display=proxySelect.value==='custom'?'block':'none';}
 proxySelect.addEventListener('change',function(){sset('iptv_proxy',proxySelect.value);syncProxyUI();});
@@ -1049,12 +1094,32 @@ document.addEventListener('keydown',function(e){
 });
 
 /* ---------- boot ---------- */
+var APP_VERSION='1.5.0';
+try{console.log('[tuner] v'+APP_VERSION);}catch(e){}
+window.addEventListener('error',function(){try{toast('Oops — something glitched. Reload if it sticks.');}catch(_){}});
 urlInput.value=sget('iptv_url')||DEFAULT_URL;
 addCountryOptions(FALLBACK_COUNTRIES.map(function(f){return {code:f[0],name:f[1],flag:f[2]};}));
 bindCards(grid);bindCards(rail);
 syncCountrySelect(urlInput.value);
 showView('home');
 detectRegion();
+try{
+  var _vv=parseFloat(sget('tuner_vol'));
+  if(!isNaN(_vv))video.volume=Math.min(1,Math.max(0,_vv));
+  if(sget('tuner_mute')==='1')video.muted=true;
+}catch(e){}
+video.addEventListener('volumechange',function(){try{sset('tuner_vol',String(video.volume));sset('tuner_mute',video.muted?'1':'0');}catch(e){}});
+if(!sget('tuner_seen')){try{openWelcome();}catch(e){}}
+if(('serviceWorker' in navigator)&&/^https?:$/.test(location.protocol)){
+  try{
+    navigator.serviceWorker.register('sw.js').then(function(reg){
+      reg.addEventListener('updatefound',function(){
+        var w=reg.installing;
+        if(w)w.addEventListener('statechange',function(){if(w.state==='activated')toast('App updated — refresh for the newest version');});
+      });
+    }).catch(function(){});
+  }catch(e){}
+}
 loadUrl(urlInput.value.trim());
 })();
 </script>
