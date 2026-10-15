@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#0b0d12" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📺</text></svg>" />
 <title>IPTV Player</title>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 <style>
@@ -15,7 +16,7 @@
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
-body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden}
 button,input,select{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -39,7 +40,7 @@ button{cursor:pointer}
 .list-pane{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--surface);border-top:1px solid var(--line)}
 
 /* ---------- player ---------- */
-.video-wrap{position:relative;background:#000;aspect-ratio:16/9;width:100%;max-height:45dvh;margin:0 auto;overflow:hidden}
+.video-wrap{position:relative;background:#000;aspect-ratio:16/9;width:100%;max-height:45vh;max-height:45dvh;margin:0 auto;overflow:hidden}
 video{width:100%;height:100%;display:block;background:#000;object-fit:contain}
 .overlay{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:16px;background:rgba(5,7,10,.78);backdrop-filter:blur(4px)}
 .overlay.show{display:flex}
@@ -107,7 +108,7 @@ kbd{background:var(--bg);border:1px solid var(--line);border-bottom-width:2px;bo
 /* ---------- settings sheet ---------- */
 dialog{border:0;padding:0;background:transparent;color:var(--text);max-width:100%;max-height:100%}
 dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
-.sheet{background:var(--surface);border:1px solid var(--line);width:min(520px,100vw);border-radius:20px 20px 0 0;padding:18px 18px calc(18px + var(--safe-b));max-height:88dvh;overflow-y:auto;margin:auto auto 0}
+.sheet{background:var(--surface);border:1px solid var(--line);width:min(520px,100vw);border-radius:20px 20px 0 0;padding:18px 18px calc(18px + var(--safe-b));max-height:88vh;max-height:88dvh;overflow-y:auto;margin:auto auto 0}
 .sheet h2{margin:0 0 14px;font-size:18px;display:flex;justify-content:space-between;align-items:center}
 .field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
 .field>label,.field>span{font-size:12.5px;color:var(--muted);font-weight:600}
@@ -128,7 +129,7 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
   .layout{flex-direction:row}
   .player-pane{order:2;flex:1;min-width:0;overflow-y:auto}
   .list-pane{order:1;width:400px;flex-shrink:0;border-top:0;border-right:1px solid var(--line)}
-  .video-wrap{max-height:calc(100dvh - 230px);border-radius:0 0 var(--radius) var(--radius)}
+  .video-wrap{max-height:calc(100vh - 230px);max-height:calc(100dvh - 230px);border-radius:0 0 var(--radius) var(--radius)}
   .player-pane .video-wrap{margin:0 0 0}
   .kbd-hint{display:block}
   .swipe-hint{display:none}
@@ -141,7 +142,7 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
   .layout{flex-direction:row}
   .player-pane{flex:1.4;overflow-y:auto}
   .list-pane{flex:1;border-top:0;border-left:1px solid var(--line)}
-  .video-wrap{max-height:70dvh}
+  .video-wrap{max-height:70vh;max-height:70dvh}
   .topbar .brand span{display:none}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -240,8 +241,8 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
       <label for="proxySelect">CORS proxy</label>
       <select id="proxySelect">
         <option value="direct">Direct (no proxy)</option>
-        <option value="corsproxy" selected>corsproxy.io</option>
-        <option value="allorigins">allorigins.win</option>
+        <option value="allorigins" selected>allorigins.win (free)</option>
+        <option value="corsproxy">corsproxy.io (needs API key)</option>
         <option value="custom">Custom…</option>
       </select>
       <input id="proxyCustom" type="text" placeholder="https://my-worker.dev/?url=" style="display:none" aria-label="Custom proxy prefix" />
@@ -275,7 +276,9 @@ try{favSet=new Set(JSON.parse(sget('iptv_favs')||'[]'));}catch(e){}
 try{recent=JSON.parse(sget('iptv_recent')||'[]');}catch(e){recent=[];}
 showFailedEl.checked=sget('iptv_showFailed')==='1';
 autoSkipEl.checked=sget('iptv_autoskip')==='1';
-if(sget('iptv_proxy'))proxySelect.value=sget('iptv_proxy');
+var _sp=sget('iptv_proxy');
+if(_sp==='corsproxy'){proxySelect.value='allorigins';sset('iptv_proxy','allorigins');}
+else if(_sp)proxySelect.value=_sp;
 if(sget('iptv_proxy_custom'))proxyCustom.value=sget('iptv_proxy_custom');
 if(sget('iptv_autoproxy')==='0')autoProxyEl.checked=false;
 
