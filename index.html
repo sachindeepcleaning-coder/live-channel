@@ -5,44 +5,126 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#0b0d12" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📺</text></svg>" />
-<title>IPTV Player</title>
+<title>Tuner — IPTV Player</title>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#0b0d12; --surface:#13171f; --surface2:#1a202b; --line:#252c39;
-  --text:#eef1f6; --muted:#8f9bb0; --accent:#4f8cff; --accent-soft:#1a2b4d;
-  --good:#2ecc71; --bad:#ff5d5d; --star:#ffc933;
+  --bg:#0b0d12; --surface:#12161d; --surface2:#1a2029; --card:#151a22; --line:#242c38;
+  --text:#f2f4f8; --muted:#8f9bb0; --accent:#ff2442; --accent-soft:#3a1220;
+  --blue:#4f8cff; --blue-soft:#16294d; --good:#2ecc71; --star:#ffc933;
   --row:64px; --radius:14px; --safe-b:env(safe-area-inset-bottom,0px);
+  --font-d:'Archivo',system-ui,sans-serif; --font-b:'IBM Plex Sans',system-ui,sans-serif;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
-body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 var(--font-b);display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden}
 button,input,select{font:inherit;color:inherit}
 button{cursor:pointer}
-:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
-/* ---------- top bar ---------- */
-.topbar{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--surface);border-bottom:1px solid var(--line);flex-shrink:0}
-.brand{font-weight:700;font-size:17px;display:flex;align-items:center;gap:8px;white-space:nowrap}
-.brand i{font-style:normal;background:var(--accent);border-radius:8px;padding:2px 7px;font-size:14px}
-.search-box{flex:1;position:relative;min-width:0}
-.search-box input{width:100%;height:42px;border-radius:999px;border:1px solid var(--line);background:var(--bg);padding:0 40px 0 40px}
+/* ---------- top navbar ---------- */
+.topbar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--surface);border-bottom:1px solid var(--line);flex-shrink:0;z-index:30}
+.menu-btn{width:42px;height:42px;border-radius:50%;border:0;background:transparent;font-size:20px;flex-shrink:0}
+.menu-btn:hover{background:var(--surface2)}
+.brand{display:flex;align-items:center;gap:9px;font-family:var(--font-d);font-weight:800;font-size:19px;letter-spacing:.5px;white-space:nowrap;cursor:pointer;background:none;border:0;padding:4px}
+.brand .play-badge{background:var(--accent);border-radius:9px;padding:2px 8px;font-size:15px;box-shadow:0 0 18px #ff244255}
+.onair{display:flex;align-items:center;gap:6px;font-family:var(--font-d);font-size:11px;font-weight:700;letter-spacing:1.5px;color:#ff8ba0;border:1px solid #ff244244;border-radius:999px;padding:4px 11px;background:#ff244211}
+.onair i{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:blink 1.4s ease-in-out infinite}
+@keyframes blink{50%{opacity:.25;box-shadow:0 0 0 5px #ff244233}}
+.search-box{flex:1;position:relative;min-width:0;max-width:640px;margin:0 auto}
+.search-box input{width:100%;height:42px;border-radius:999px;border:1px solid var(--line);background:var(--bg);padding:0 42px 0 42px}
+.search-box input:focus{border-color:var(--blue)}
 .search-box .ico{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
 .search-box .clear{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;border:0;background:var(--surface2);color:var(--muted);display:none}
 .search-box.has .clear{display:block}
-.icon-btn{width:42px;height:42px;border-radius:12px;border:1px solid var(--line);background:var(--surface2);display:grid;place-items:center;font-size:18px;flex-shrink:0}
-.icon-btn:hover{border-color:var(--accent)}
+.icon-btn{width:42px;height:42px;border-radius:50%;border:0;background:transparent;display:grid;place-items:center;font-size:19px;flex-shrink:0}
+.icon-btn:hover{background:var(--surface2)}
 
-/* ---------- layout ---------- */
-.layout{flex:1;min-height:0;display:flex;flex-direction:column}
-.player-pane{flex-shrink:0;background:var(--bg)}
-.list-pane{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--surface);border-top:1px solid var(--line)}
+/* ---------- category chips ---------- */
+.chips-row{display:flex;align-items:center;gap:2px;flex-shrink:0;background:var(--bg);border-bottom:1px solid var(--line);padding:0 8px;z-index:20}
+.chips{display:flex;gap:8px;padding:10px 4px;overflow-x:auto;scrollbar-width:none;flex:1;min-width:0;-webkit-overflow-scrolling:touch}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex-shrink:0;border:1px solid var(--line);background:var(--surface2);border-radius:10px;padding:7px 14px;font-size:13.5px;font-weight:500;color:var(--text);min-height:36px}
+.chip:hover{border-color:var(--blue)}
+.chip.on{background:var(--text);border-color:var(--text);color:#0b0d12;font-weight:600}
+.chip small{opacity:.55;margin-left:5px;font-weight:400}
+.chip-nav{display:none;width:34px;height:34px;flex-shrink:0;border-radius:50%;border:1px solid var(--line);background:var(--surface2);color:var(--text);font-size:14px;line-height:1}
+.chip-nav:hover{border-color:var(--blue)}
+@media (min-width:900px){
+  .chip-nav{display:block}
+  .chips{scrollbar-width:thin}
+  .chips::-webkit-scrollbar{display:block;height:6px}
+  .chips::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+}
 
-/* ---------- player ---------- */
-.video-wrap{position:relative;background:#000;aspect-ratio:16/9;width:100%;max-height:45vh;max-height:45dvh;margin:0 auto;overflow:hidden}
+/* ---------- shell + drawer ---------- */
+.shell{flex:1;min-height:0;display:flex;position:relative}
+#drawer{position:absolute;left:0;top:0;bottom:0;width:min(280px,84vw);background:var(--surface);border-right:1px solid var(--line);z-index:40;transform:translateX(-102%);transition:transform .22s ease;display:flex;flex-direction:column;padding:10px 8px;overflow-y:auto}
+#drawer.open{transform:none;box-shadow:30px 0 60px #000a}
+#scrim{position:absolute;inset:0;background:#000a;z-index:35;opacity:0;pointer-events:none;transition:opacity .22s}
+#scrim.show{opacity:1;pointer-events:auto}
+.nav-item{display:flex;align-items:center;gap:16px;width:100%;border:0;background:transparent;color:var(--text);border-radius:10px;padding:11px 14px;font-size:14.5px;text-align:left}
+.nav-item:hover{background:var(--surface2)}
+.nav-item.on{background:var(--surface2);font-weight:600}
+.nav-item .ni-ico{font-size:18px;width:24px;text-align:center}
+.nav-sep{border-top:1px solid var(--line);margin:10px 6px}
+.nav-head{font-size:11.5px;font-weight:600;letter-spacing:1px;color:var(--muted);padding:8px 14px 4px;text-transform:uppercase}
+.drawer-foot{margin-top:auto;padding:12px 14px;color:var(--muted);font-size:12px;border-top:1px solid var(--line)}
+
+/* ---------- views ---------- */
+#homeView{flex:1;min-width:0;overflow-y:auto;padding:18px clamp(12px,3vw,32px) 90px;-webkit-overflow-scrolling:touch}
+#watchView{flex:1;min-width:0;min-height:0;display:flex;overflow:hidden}
+#watchView[hidden]{display:none}
+.home-inner{max-width:1500px;margin:0 auto}
+.home-title{font-family:var(--font-d);font-weight:800;font-size:clamp(22px,3vw,30px);margin:4px 0 2px;letter-spacing:.3px}
+.home-sub{color:var(--muted);font-size:13.5px;margin:0 0 16px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:22px}
+.stat{background:linear-gradient(180deg,var(--surface2),var(--surface));border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;position:relative;overflow:hidden}
+.stat::after{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent);opacity:.85}
+.stat:nth-child(2)::after{background:var(--blue)}
+.stat:nth-child(3)::after{background:var(--star)}
+.stat:nth-child(4)::after{background:var(--good)}
+.stat b{display:block;font-family:var(--font-d);font-size:clamp(20px,2.4vw,28px);font-weight:800}
+.stat span{color:var(--muted);font-size:12.5px}
+.rail-head{display:flex;align-items:baseline;justify-content:space-between;margin:6px 0 10px}
+.rail-head h3{font-family:var(--font-d);font-size:17px;margin:0;font-weight:700}
+.rail{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;scrollbar-width:none;margin:0 -4px 24px}
+.rail::-webkit-scrollbar{display:none}
+.rail .card{flex:0 0 210px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+.grid-meta{display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:13px;margin:4px 0 12px}
+#moreBtn{display:block;margin:22px auto 0}
+
+/* ---------- channel cards ---------- */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;cursor:pointer;position:relative;animation:rise .35s ease both;animation-delay:calc(var(--i,0)*22ms);padding:0;text-align:left}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}}
+.card:hover{border-color:var(--accent);transform:translateY(-2px);transition:transform .15s}
+.thumb{position:relative;aspect-ratio:16/9;background:#080a0e;display:grid;place-items:center;overflow:hidden}
+.thumb img{width:72%;height:72%;object-fit:contain}
+.thumb .fallback{font-family:var(--font-d);font-weight:800;font-size:34px;color:#3a4354}
+.live-badge{position:absolute;left:8px;top:8px;background:var(--accent);color:#fff;font-size:10.5px;font-weight:700;letter-spacing:1px;border-radius:6px;padding:3px 8px;display:flex;align-items:center;gap:5px}
+.live-badge i{width:6px;height:6px;border-radius:50%;background:#fff;animation:blink 1.4s infinite}
+.play-ov{position:absolute;inset:0;display:grid;place-items:center;background:#0009;opacity:0;transition:opacity .15s;font-size:38px}
+.card:hover .play-ov{opacity:1}
+.card-body{display:flex;gap:10px;padding:10px 12px 12px}
+.avatar{width:34px;height:34px;flex-shrink:0;border-radius:50%;background:var(--surface2);display:grid;place-items:center;font-weight:700;font-size:15px;overflow:hidden}
+.avatar img{width:100%;height:100%;object-fit:contain}
+.card-txt{flex:1;min-width:0}
+.card-name{font-size:14px;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card-meta{color:var(--muted);font-size:12px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-fav{position:absolute;right:6px;top:6px;width:32px;height:32px;border-radius:50%;border:0;background:#000a;color:#8b94a5;font-size:16px}
+.card-fav.on{color:var(--star)}
+
+/* ---------- watch view ---------- */
+.player-pane{flex:1;min-width:0;overflow-y:auto;padding:16px clamp(10px,2vw,28px) 40px}
+.list-pane{width:400px;flex-shrink:0;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--line);min-height:0}
+.back-btn{display:none;margin-bottom:10px}
+.video-wrap{position:relative;background:#000;aspect-ratio:16/9;width:100%;max-height:62vh;max-height:62dvh;margin:0 auto;overflow:hidden;border-radius:var(--radius);border:1px solid var(--line)}
 video{width:100%;height:100%;display:block;background:#000;object-fit:contain}
-.overlay{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:16px;background:rgba(5,7,10,.78);backdrop-filter:blur(4px)}
+.overlay{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:16px;background:rgba(5,7,10,.78);backdrop-filter:blur(4px);border-radius:var(--radius)}
 .overlay.show{display:flex}
 .spinner{width:42px;height:42px;border-radius:50%;border:4px solid #ffffff30;border-top-color:#fff;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -52,47 +134,29 @@ video{width:100%;height:100%;display:block;background:#000;object-fit:contain}
 .ov-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 .btn{border:0;border-radius:10px;padding:10px 16px;font-weight:600;background:var(--accent);color:#fff;min-height:42px}
 .btn.ghost{background:var(--surface2);border:1px solid var(--line);color:var(--text);font-weight:500}
-.btn:disabled{opacity:.5}
 .hud{position:absolute;left:10px;top:10px;display:flex;gap:6px;pointer-events:none}
 .pill{background:#000a;border:1px solid #ffffff22;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600}
-.pill.live{background:#e5353f;border-color:#e5353f}
+.pill.live{background:#e5353f;border-color:#e5353f;display:flex;align-items:center;gap:6px}
+.pill.live i{width:7px;height:7px;border-radius:50%;background:#fff;animation:blink 1.4s infinite}
 .swipe-hint{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:#fff9;writing-mode:vertical-rl;pointer-events:none;opacity:0;transition:opacity .3s}
 .video-wrap.touch-hint .swipe-hint{opacity:1}
-
-.now{padding:10px 14px;display:flex;align-items:center;gap:12px}
-.now-logo{width:46px;height:46px;border-radius:10px;background:var(--surface2);object-fit:contain;flex-shrink:0;display:grid;place-items:center;font-weight:700;color:var(--muted);overflow:hidden}
-.now-logo img{width:100%;height:100%;object-fit:contain}
+.now{padding:12px 2px;display:flex;align-items:center;gap:12px}
+.now-logo{width:48px;height:48px;border-radius:50%;background:var(--surface2);flex-shrink:0;display:grid;place-items:center;font-weight:700;font-size:20px;overflow:hidden}
 .now-text{flex:1;min-width:0}
-#currentName{margin:0;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#currentName{margin:0;font-family:var(--font-d);font-size:19px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #meta{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.actions{display:flex;gap:8px;padding:0 14px 10px;overflow-x:auto;scrollbar-width:none}
+.desc{background:var(--surface2);border-radius:12px;padding:12px 14px;font-size:13.5px;color:var(--text);margin:2px 0 12px}
+.desc small{color:var(--muted);display:block;margin-top:6px;word-break:break-all}
+.actions{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
 .actions::-webkit-scrollbar{display:none}
 .act{flex-shrink:0;display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface2);border-radius:999px;padding:8px 14px;font-size:13.5px;min-height:40px;white-space:nowrap}
 .act:hover{border-color:var(--accent)}
 .act.on{color:var(--star);border-color:#5b4a14}
-.kbd-hint{display:none;color:var(--muted);font-size:12px;padding:0 14px 14px}
+.act.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.kbd-hint{display:none;color:var(--muted);font-size:12px;margin-top:12px}
 kbd{background:var(--bg);border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 6px;font-size:11.5px}
-
-/* ---------- list ---------- */
-.tabs{display:flex;padding:6px 10px 0;gap:4px;flex-shrink:0}
-.tab{flex:1;border:0;background:transparent;color:var(--muted);padding:10px 4px;font-weight:600;border-bottom:2px solid transparent}
-.tab.on{color:var(--text);border-bottom-color:var(--accent)}
-.chips{display:flex;gap:8px;padding:10px;overflow-x:auto;scrollbar-width:none;flex-shrink:0;-webkit-overflow-scrolling:touch}
-.chips::-webkit-scrollbar{display:none}
-.chips-row{display:flex;align-items:center;gap:2px;flex-shrink:0}
-.chips-row .chips{flex:1;min-width:0}
-.chip-nav{display:none;width:34px;height:34px;flex-shrink:0;border-radius:50%;border:1px solid var(--line);background:var(--surface2);color:var(--text);font-size:14px;line-height:1}
-.chip-nav:hover{border-color:var(--accent)}
-@media (min-width:900px){
-  .chip-nav{display:block}
-  .chips{scrollbar-width:thin}
-  .chips::-webkit-scrollbar{display:block;height:6px}
-  .chips::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
-}
-.chip{flex-shrink:0;border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:6px 14px;font-size:13px;color:var(--muted);min-height:34px}
-.chip.on{background:var(--accent-soft);border-color:var(--accent);color:#fff}
-.chip small{opacity:.6;margin-left:4px}
-.list-info{padding:0 14px 6px;color:var(--muted);font-size:12px;display:flex;justify-content:space-between;flex-shrink:0}
+.upnext-head{padding:12px 14px 4px;font-family:var(--font-d);font-weight:700;font-size:15px;display:flex;justify-content:space-between;align-items:center}
+.upnext-head small{color:var(--muted);font-family:var(--font-b);font-weight:400;font-size:12px}
 #listWrap{flex:1;overflow-y:auto;position:relative;min-height:0;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-bottom:var(--safe-b)}
 #listSpacer{position:relative}
 .ch{position:absolute;left:0;right:0;height:var(--row);display:flex;align-items:center;gap:12px;padding:0 8px 0 12px;border-bottom:1px solid #1a2029;cursor:pointer;border-left:3px solid transparent}
@@ -115,13 +179,22 @@ kbd{background:var(--bg);border:1px solid var(--line);border-bottom-width:2px;bo
 .skel b,.skel span{animation:pulse 1.2s ease-in-out infinite}
 @keyframes pulse{50%{opacity:.4}}
 
+/* ---------- bottom nav (mobile) ---------- */
+#bottomNav{display:none}
+@media (max-width:899px){
+  #bottomNav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--surface);border-top:1px solid var(--line);padding:6px 4px calc(6px + var(--safe-b))}
+  #bottomNav button{flex:1;border:0;background:transparent;color:var(--muted);font-size:11px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;min-height:52px}
+  #bottomNav button i{font-style:normal;font-size:20px}
+  #bottomNav button.on{color:var(--text)}
+}
+
 /* ---------- settings sheet ---------- */
 dialog{border:0;padding:0;background:transparent;color:var(--text);max-width:100%;max-height:100%}
 dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
 .sheet{background:var(--surface);border:1px solid var(--line);width:min(520px,100vw);border-radius:20px 20px 0 0;padding:18px 18px calc(18px + var(--safe-b));max-height:88vh;max-height:88dvh;overflow-y:auto;margin:auto auto 0}
-.sheet h2{margin:0 0 14px;font-size:18px;display:flex;justify-content:space-between;align-items:center}
+.sheet h2{margin:0 0 14px;font-size:18px;display:flex;justify-content:space-between;align-items:center;font-family:var(--font-d)}
 .field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
-.field>label,.field>span{font-size:12.5px;color:var(--muted);font-weight:600}
+.field>label{font-size:12.5px;color:var(--muted);font-weight:600}
 .field input[type=text],.field select{height:44px;border-radius:10px;border:1px solid var(--line);background:var(--bg);padding:0 12px;width:100%}
 .row{display:flex;gap:8px}
 .row>*{flex:1}
@@ -130,38 +203,40 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
 .file-btn{display:block;text-align:center;padding:11px;border:1px dashed var(--line);border-radius:10px;cursor:pointer;color:var(--muted)}
 .file-btn:hover{border-color:var(--accent);color:var(--text)}
 
-#toast{position:fixed;left:50%;bottom:calc(20px + var(--safe-b));transform:translate(-50%,30px);background:#232b3a;border:1px solid var(--line);padding:10px 16px;border-radius:999px;opacity:0;pointer-events:none;transition:.25s;z-index:50;font-size:13.5px;max-width:90vw}
+#toast{position:fixed;left:50%;bottom:calc(76px + var(--safe-b));transform:translate(-50%,30px);background:#232b3a;border:1px solid var(--line);padding:10px 16px;border-radius:999px;opacity:0;pointer-events:none;transition:.25s;z-index:60;font-size:13.5px;max-width:90vw}
 #toast.show{opacity:1;transform:translate(-50%,0)}
+@media (min-width:900px){#toast{bottom:calc(20px + var(--safe-b))}}
 
-/* ---------- desktop ---------- */
+/* ---------- responsive ---------- */
 @media (min-width:900px){
-  body{font-size:14.5px}
-  .layout{flex-direction:row}
-  .player-pane{order:2;flex:1;min-width:0;overflow-y:auto}
-  .list-pane{order:1;width:400px;flex-shrink:0;border-top:0;border-right:1px solid var(--line)}
-  .video-wrap{max-height:calc(100vh - 230px);max-height:calc(100dvh - 230px);border-radius:0 0 var(--radius) var(--radius)}
-  .player-pane .video-wrap{margin:0 0 0}
   .kbd-hint{display:block}
   .swipe-hint{display:none}
   .sheet{border-radius:20px;margin:auto}
-  .search-box{max-width:520px;margin:0 auto}
-  .topbar{padding:10px 16px}
+  .onair{font-size:12px}
 }
-@media (min-width:1500px){ .list-pane{width:460px} }
-@media (max-height:480px) and (orientation:landscape) and (max-width:899px){
-  .layout{flex-direction:row}
-  .player-pane{flex:1.4;overflow-y:auto}
-  .list-pane{flex:1;border-top:0;border-left:1px solid var(--line)}
-  .video-wrap{max-height:70vh;max-height:70dvh}
-  .topbar .brand span{display:none}
+@media (max-width:899px){
+  .onair{display:none}
+  .brand{font-size:17px}
+  #watchView{flex-direction:column;overflow-y:auto}
+  .player-pane{overflow:visible;padding:10px 10px 20px}
+  .list-pane{width:100%;border-left:0;border-top:1px solid var(--line);min-height:50vh}
+  #listWrap{min-height:40vh}
+  .back-btn{display:inline-flex}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .rail .card{flex-basis:170px}
+  #homeView{padding-bottom:110px}
 }
-@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (min-width:1500px){.list-pane{width:440px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.card{animation:none}}
 </style>
 </head>
 <body>
 
 <header class="topbar">
-  <div class="brand"><i>▶</i><span>IPTV</span></div>
+  <button class="menu-btn" id="menuBtn" aria-label="Open menu">☰</button>
+  <button class="brand" id="brandBtn" aria-label="Go home"><span class="play-badge">▶</span><span>Tuner</span></button>
+  <span class="onair"><i></i>ON AIR</span>
   <div class="search-box" id="searchBox">
     <span class="ico" aria-hidden="true">🔍</span>
     <input id="search" type="search" placeholder="Search channels…" aria-label="Search channels" autocomplete="off" enterkeyhint="search" />
@@ -170,68 +245,106 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
   <button class="icon-btn" id="settingsBtn" aria-label="Settings" title="Settings">⚙️</button>
 </header>
 
-<div class="layout">
-  <section class="player-pane" aria-label="Player">
-    <div class="video-wrap" id="videoWrap">
-      <video id="video" controls playsinline></video>
-      <div class="hud"><span class="pill live" id="livePill" hidden>● LIVE</span><span class="pill" id="proxyPill" hidden>proxy</span></div>
-      <div class="swipe-hint">swipe ↕ to change channel</div>
-      <div class="overlay" id="bufferOv" aria-live="polite"><div class="spinner"></div></div>
-      <div class="overlay" id="errorOv" role="alert">
-        <div class="ov-title">📡 Can't play this channel</div>
-        <div class="ov-sub" id="errorDetail">It may be offline or blocked by the browser.</div>
-        <div class="ov-actions">
-          <button class="btn" id="retryBtn">Retry via proxy</button>
-          <button class="btn ghost" id="nextErrBtn">Next channel ⏭</button>
+<div class="chips-row">
+  <button class="chip-nav" id="chipLeft" aria-label="Scroll categories left">◀</button>
+  <div class="chips" id="chips" aria-label="Categories"></div>
+  <button class="chip-nav" id="chipRight" aria-label="Scroll categories right">▶</button>
+</div>
+
+<div class="shell">
+  <aside id="drawer" aria-label="Menu">
+    <button class="nav-item" data-nav="home"><span class="ni-ico">🏠</span>Home</button>
+    <button class="nav-item" data-nav="watch"><span class="ni-ico">📺</span>Now playing</button>
+    <button class="nav-item" data-nav="fav"><span class="ni-ico">⭐</span>Favorites</button>
+    <button class="nav-item" data-nav="recent"><span class="ni-ico">🕘</span>History</button>
+    <div class="nav-sep"></div>
+    <div class="nav-head">Library</div>
+    <button class="nav-item" data-nav="settings"><span class="ni-ico">⚙️</span>Sources &amp; proxy</button>
+    <div class="drawer-foot" id="drawerFoot">Loading…</div>
+  </aside>
+  <div id="scrim"></div>
+
+  <main id="homeView" aria-label="Browse">
+    <div class="home-inner">
+      <h2 class="home-title" id="homeTitle">📡 What to watch?</h2>
+      <p class="home-sub" id="homeSub">Live TV dashboard — pick a channel to start.</p>
+      <div class="stats">
+        <div class="stat"><b id="statChannels">–</b><span>channels loaded</span></div>
+        <div class="stat"><b id="statCats">–</b><span>categories</span></div>
+        <div class="stat"><b id="statFavs">–</b><span>favorites</span></div>
+        <div class="stat"><b id="statFailed">–</b><span>offline this session</span></div>
+      </div>
+      <div id="railWrap">
+        <div class="rail-head"><h3>🕘 Continue watching</h3></div>
+        <div class="rail" id="rail"></div>
+      </div>
+      <div class="rail-head"><h3 id="gridTitle">🔥 All channels</h3></div>
+      <div class="grid-meta"><span id="gridMeta"></span></div>
+      <div class="grid" id="grid"></div>
+      <button class="btn ghost" id="moreBtn">Show more</button>
+    </div>
+  </main>
+
+  <main id="watchView" hidden aria-label="Player">
+    <section class="player-pane">
+      <button class="btn ghost back-btn" id="backBtn">← Browse</button>
+      <div class="video-wrap" id="videoWrap">
+        <video id="video" controls playsinline></video>
+        <div class="hud"><span class="pill live" id="livePill" hidden><i></i>LIVE</span><span class="pill" id="proxyPill" hidden>proxy</span></div>
+        <div class="swipe-hint">swipe ↕ to change channel</div>
+        <div class="overlay" id="bufferOv" aria-live="polite"><div class="spinner"></div></div>
+        <div class="overlay" id="errorOv" role="alert">
+          <div class="ov-title">📡 Can't play this channel</div>
+          <div class="ov-sub" id="errorDetail">It may be offline or blocked by the browser.</div>
+          <div class="ov-actions">
+            <button class="btn" id="retryBtn">Retry via proxy</button>
+            <button class="btn ghost" id="nextErrBtn">Next channel ⏭</button>
+          </div>
+        </div>
+        <div class="overlay show" id="idleOv" style="background:transparent;backdrop-filter:none;pointer-events:none">
+          <div class="ov-sub">Pick a channel to start watching</div>
         </div>
       </div>
-      <div class="overlay show" id="idleOv" style="background:transparent;backdrop-filter:none;pointer-events:none">
-        <div class="ov-sub">Pick a channel to start watching</div>
+      <div class="now">
+        <div class="now-logo" id="nowLogo">📺</div>
+        <div class="now-text">
+          <h2 id="currentName">No channel selected</h2>
+          <div id="meta">Choose from the list</div>
+        </div>
       </div>
-    </div>
-
-    <div class="now">
-      <div class="now-logo" id="nowLogo">📺</div>
-      <div class="now-text">
-        <h2 id="currentName">No channel selected</h2>
-        <div id="meta">Choose from the list</div>
+      <div class="actions">
+        <button class="act primary" id="favBtn" title="Favorite (F)">☆ Subscribe</button>
+        <button class="act" id="prevBtn" title="Previous (P)">⏮ Prev</button>
+        <button class="act" id="nextBtn" title="Next (N)">Next ⏭</button>
+        <button class="act" id="proxyBtn" title="Play through proxy">🔁 Via proxy</button>
+        <button class="act" id="pipBtn" title="Picture-in-picture" hidden>🗗 PiP</button>
+        <button class="act" id="fsBtn" title="Fullscreen">⛶ Fullscreen</button>
+        <button class="act" id="copyBtn" title="Copy stream URL">🔗 Share</button>
       </div>
-    </div>
-    <div class="actions">
-      <button class="act" id="prevBtn" title="Previous (P)">⏮ Prev</button>
-      <button class="act" id="nextBtn" title="Next (N)">Next ⏭</button>
-      <button class="act" id="favBtn" title="Favorite (F)">☆ Favorite</button>
-      <button class="act" id="fsBtn" title="Fullscreen">⛶ Fullscreen</button>
-      <button class="act" id="pipBtn" title="Picture-in-picture" hidden>🗗 PiP</button>
-      <button class="act" id="proxyBtn" title="Play through proxy">🔁 Via proxy</button>
-      <button class="act" id="copyBtn" title="Copy stream URL">🔗 Copy URL</button>
-    </div>
-    <div class="kbd-hint">Shortcuts: <kbd>/</kbd> search · <kbd>↑</kbd><kbd>↓</kbd> browse · <kbd>Enter</kbd> play · <kbd>N</kbd>/<kbd>P</kbd> next/prev · <kbd>F</kbd> favorite · <kbd>Space</kbd> pause · <kbd>M</kbd> mute</div>
-  </section>
-
-  <section class="list-pane" aria-label="Channels">
-    <div class="tabs" role="tablist">
-      <button class="tab on" role="tab" aria-selected="true" data-tab="all">All</button>
-      <button class="tab" role="tab" aria-selected="false" data-tab="fav">★ Favorites</button>
-      <button class="tab" role="tab" aria-selected="false" data-tab="recent">🕘 Recent</button>
-    </div>
-    <div class="chips-row">
-      <button class="chip-nav" id="chipLeft" aria-label="Scroll categories left">◀</button>
-      <div class="chips" id="chips" aria-label="Categories"></div>
-      <button class="chip-nav" id="chipRight" aria-label="Scroll categories right">▶</button>
-    </div>
-    <div class="list-info"><span id="counts">Loading…</span><span id="failedInfo"></span></div>
-    <div id="listWrap" role="listbox" aria-label="Channel list" tabindex="0">
-      <div id="listSpacer"></div>
-      <div id="emptyMsg" class="empty"></div>
-    </div>
-  </section>
+      <div class="desc" id="descBox">Stream details appear here.<small id="descUrl"></small></div>
+      <div class="kbd-hint">Shortcuts: <kbd>/</kbd> search · <kbd>↑</kbd><kbd>↓</kbd> browse · <kbd>Enter</kbd> play · <kbd>N</kbd>/<kbd>P</kbd> next/prev · <kbd>F</kbd> favorite · <kbd>Space</kbd> pause · <kbd>M</kbd> mute</div>
+    </section>
+    <section class="list-pane" aria-label="Up next">
+      <div class="upnext-head"><span>Up next</span><small id="counts">Loading…</small></div>
+      <div class="upnext-head" style="padding-top:0"><small id="failedInfo"></small></div>
+      <div id="listWrap" role="listbox" aria-label="Channel list" tabindex="0">
+        <div id="listSpacer"></div>
+        <div id="emptyMsg" class="empty"></div>
+      </div>
+    </section>
+  </main>
 </div>
+
+<nav id="bottomNav" aria-label="Primary">
+  <button data-bnav="home" class="on"><i>🏠</i>Home</button>
+  <button data-bnav="fav"><i>⭐</i>Saved</button>
+  <button data-bnav="recent"><i>🕘</i>History</button>
+  <button data-bnav="settings"><i>⚙️</i>Setup</button>
+</nav>
 
 <dialog id="settings">
   <div class="sheet">
-    <h2>Settings <button class="icon-btn" id="closeSettings" aria-label="Close">✕</button></h2>
-
+    <h2>Sources &amp; proxy <button class="icon-btn" id="closeSettings" aria-label="Close">✕</button></h2>
     <div class="field">
       <label for="countrySelect">Country / playlist</label>
       <select id="countrySelect">
@@ -250,7 +363,6 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
       <label class="file-btn" for="fileInput" tabindex="0" id="fileLabel">📁 Open local .m3u file</label>
       <input id="fileInput" type="file" accept=".m3u,.m3u8,.txt,text/plain" hidden />
     </div>
-
     <div class="field">
       <label for="proxySelect">CORS proxy</label>
       <select id="proxySelect">
@@ -274,15 +386,18 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
 "use strict";
 var DEFAULT_URL="https://iptv-org.github.io/iptv/countries/in.m3u";
 var FALLBACK_COUNTRIES=[["us","USA","🇺🇸"],["uk","UK","🇬🇧"],["ca","Canada","🇨🇦"],["au","Australia","🇦🇺"],["pk","Pakistan","🇵🇰"],["bd","Bangladesh","🇧🇩"],["ae","UAE","🇦🇪"],["sa","Saudi","🇸🇦"],["de","Germany","🇩🇪"],["fr","France","🇫🇷"],["it","Italy","🇮🇹"],["es","Spain","🇪🇸"],["br","Brazil","🇧🇷"],["mx","Mexico","🇲🇽"],["jp","Japan","🇯🇵"],["kr","Korea","🇰🇷"],["cn","China","🇨🇳"],["ru","Russia","🇷🇺"],["za","South Africa","🇿🇦"],["np","Nepal","🇳🇵"]];
+var GRID_PAGE=48;
 var $=function(id){return document.getElementById(id);};
 var video=$('video'),videoWrap=$('videoWrap'),listWrap=$('listWrap'),listSpacer=$('listSpacer'),emptyMsg=$('emptyMsg');
 var searchEl=$('search'),searchBox=$('searchBox'),chipsEl=$('chips'),countsEl=$('counts'),failedInfo=$('failedInfo');
 var urlInput=$('urlInput'),countrySelect=$('countrySelect'),proxySelect=$('proxySelect'),proxyCustom=$('proxyCustom');
 var autoProxyEl=$('autoProxy'),showFailedEl=$('showFailed'),autoSkipEl=$('autoSkip');
-var settings=$('settings');
+var settings=$('settings'),homeView=$('homeView'),watchView=$('watchView'),drawer=$('drawer'),scrim=$('scrim');
+var grid=$('grid'),rail=$('rail'),railWrap=$('railWrap'),moreBtn=$('moreBtn');
 
 var allChannels=[],filtered=[],failedSet=new Set(),favSet=new Set(),recent=[];
-var group='',tab='all',currentChannel=null,currentUrl=null,hls=null,raf=null,triedProxyUrl=null,toastT=null;
+var group='',tab='all',view='home',gridShown=0;
+var currentChannel=null,currentUrl=null,hls=null,raf=null,triedProxyUrl=null,toastT=null;
 
 function sget(k){try{return localStorage.getItem(k);}catch(e){return null;}}
 function sset(k,v){try{localStorage.setItem(k,v);}catch(e){}}
@@ -298,6 +413,48 @@ if(sget('iptv_autoproxy')==='0')autoProxyEl.checked=false;
 
 function openSettings(){try{if(settings.showModal){settings.showModal();}else{settings.setAttribute('open','');}}catch(e){try{settings.setAttribute('open','');}catch(_){}}}
 function closeSettings(){try{settings.close();}catch(e){try{settings.removeAttribute('open');}catch(_){}}}
+
+/* ---------- views / nav ---------- */
+function showView(v){
+  view=v;
+  homeView.hidden=(v!=='home');watchView.hidden=(v!=='watch');
+  document.querySelectorAll('[data-bnav]').forEach(function(b){
+    var on=(b.dataset.bnav==='home'&&v==='home'&&tab==='all')||(b.dataset.bnav==='fav'&&tab==='fav')||(b.dataset.bnav==='recent'&&tab==='recent');
+    b.classList.toggle('on',!!on);
+  });
+  document.querySelectorAll('[data-nav]').forEach(function(b){
+    var k=b.dataset.nav,on=(k==='home'&&v==='home'&&tab==='all')||(k==='watch'&&v==='watch')||(k==='fav'&&tab==='fav')||(k==='recent'&&tab==='recent');
+    b.classList.toggle('on',!!on);
+  });
+  closeDrawer();
+  if(v==='watch')renderList();
+}
+function openDrawer(){drawer.classList.add('open');scrim.classList.add('show');}
+function closeDrawer(){drawer.classList.remove('open');scrim.classList.remove('show');}
+function setTab(t,goHome){
+  tab=t;group='';
+  applyFilters(true);
+  if(goHome!==false)showView('home');else showView(view);
+}
+$('menuBtn').onclick=function(){drawer.classList.contains('open')?closeDrawer():openDrawer();};
+scrim.onclick=closeDrawer;
+$('brandBtn').onclick=function(){setTab('all');};
+$('backBtn').onclick=function(){showView('home');};
+document.querySelectorAll('[data-nav]').forEach(function(b){
+  b.onclick=function(){
+    var k=b.dataset.nav;
+    if(k==='settings'){closeDrawer();openSettings();return;}
+    if(k==='watch'){showView('watch');return;}
+    setTab(k==='home'?'all':k);
+  };
+});
+document.querySelectorAll('[data-bnav]').forEach(function(b){
+  b.onclick=function(){
+    var k=b.dataset.bnav;
+    if(k==='settings'){openSettings();return;}
+    setTab(k==='home'?'all':k);
+  };
+});
 
 function toast(msg){
   var t=$('toast');t.textContent=msg;t.classList.add('show');
@@ -360,7 +517,7 @@ function applyFilters(reset){
     return true;
   });
   if(reset!==false)listWrap.scrollTop=0;
-  renderList();updateCounts();
+  renderList();updateCounts();renderHome(reset!==false);
   if(!allChannels.length){return;}
   if(!filtered.length){
     emptyMsg.style.display='block';
@@ -368,13 +525,71 @@ function applyFilters(reset){
   }else emptyMsg.style.display='none';
 }
 function updateCounts(){
-  countsEl.textContent=filtered.length+' channel'+(filtered.length===1?'':'s');
+  countsEl.textContent=filtered.length+' up next';
   failedInfo.textContent=failedSet.size?failedSet.size+' offline hidden':'';
   if(failedSet.size&&showFailedEl.checked)failedInfo.textContent=failedSet.size+' offline';
+  $('statChannels').textContent=allChannels.length;
+  var cats={};allChannels.forEach(function(c){cats[c.group]=1;});
+  $('statCats').textContent=Object.keys(cats).length;
+  $('statFavs').textContent=favSet.size;
+  $('statFailed').textContent=failedSet.size;
+  var src=urlInput.value.trim()||'';
+  var srcName='Custom playlist';
+  if(src.indexOf('/countries/')>0)srcName=src.split('/countries/')[1].split('.')[0].toUpperCase()+' playlist';
+  else if(src.indexOf('/index.m3u')>0)srcName='World playlist';
+  $('drawerFoot').textContent=allChannels.length+' channels · '+srcName;
+  var titles={all:'🔥 All channels',fav:'⭐ Favorites',recent:'🕘 Recently watched'};
+  $('gridTitle').textContent=titles[tab]||'🔥 All channels';
+  $('homeTitle').textContent=tab==='fav'?'⭐ Your favorites':tab==='recent'?'🕘 Watch history':'📡 What to watch?';
 }
 
-/* ---------- virtual list ---------- */
+/* ---------- home: rail + grid ---------- */
+function cardHTML(c,i,isRail){
+  var init=safeInitial(c.name),fav=favSet.has(c.url);
+  var thumb=c.logo?'<img loading="lazy" src="'+esc(c.logo)+'" alt="" onerror="this.remove()">':'<span class="fallback">'+init+'</span>';
+  return '<div class="card" style="--i:'+(i%GRID_PAGE)+'" data-url="'+esc(c.url)+'" tabindex="0" role="button" aria-label="Play '+esc(c.name)+'">'
+    +'<div class="thumb">'+thumb+'<span class="live-badge"><i></i>LIVE</span><span class="play-ov">▶</span></div>'
+    +'<button class="card-fav'+(fav?' on':'')+'" data-cardfav="1" aria-label="'+(fav?'Remove favorite':'Add favorite')+'">'+(fav?'★':'☆')+'</button>'
+    +'<div class="card-body"><div class="avatar">'+(c.logo?'<img loading="lazy" src="'+esc(c.logo)+'" alt="" onerror="this.remove()">':init)+'</div>'
+    +'<div class="card-txt"><div class="card-name">'+esc(c.name)+'</div><div class="card-meta">'+esc(c.group)+'</div></div></div></div>';
+}
+function renderRail(){
+  var map={};allChannels.forEach(function(c){map[c.url]=c;});
+  var items=recent.map(function(u){return map[u];}).filter(Boolean).slice(0,12);
+  railWrap.style.display=items.length?'':'none';
+  rail.innerHTML=items.map(function(c,i){return cardHTML(c,i,true);}).join('');
+}
+function renderHome(reset){
+  renderRail();
+  if(reset)gridShown=0;
+  if(gridShown===0)gridShown=Math.min(GRID_PAGE,filtered.length);
+  grid.innerHTML=filtered.slice(0,gridShown).map(function(c,i){return cardHTML(c,i,false);}).join('');
+  $('gridMeta').textContent='Showing '+Math.min(gridShown,filtered.length)+' of '+filtered.length;
+  moreBtn.style.display=gridShown<filtered.length?'block':'none';
+  if(reset)homeView.scrollTop=0;
+}
+function bindCards(root){
+  root.addEventListener('click',function(e){
+    var favBtn=e.target.closest('[data-cardfav]');
+    var card=e.target.closest('.card');
+    if(!card)return;
+    var idx=filtered.findIndex(function(c){return c.url===card.dataset.url;});
+    if(favBtn){if(idx>=0)toggleFav(filtered[idx].url);return;}
+    if(idx>=0){playIndex(idx,true);}
+  });
+  root.addEventListener('keydown',function(e){
+    var card=e.target.closest('.card');if(!card)return;
+    if(e.key==='Enter'||e.key===' '){e.preventDefault();card.click();}
+  });
+}
+moreBtn.onclick=function(){
+  gridShown=Math.min(filtered.length,gridShown+GRID_PAGE);
+  renderHome(false);
+};
+
+/* ---------- virtual list (up next) ---------- */
 function renderList(){
+  if(view!=='watch')return;
   if(raf)return;
   raf=requestAnimationFrame(function(){
     raf=null;
@@ -400,12 +615,12 @@ listSpacer.addEventListener('click',function(e){
   var row=e.target.closest('.ch');if(!row)return;
   var idx=+row.dataset.idx;
   if(e.target.closest('[data-fav]')){toggleFav(filtered[idx].url);return;}
-  playIndex(idx);
+  playIndex(idx,true);
 });
 listSpacer.addEventListener('keydown',function(e){
   var row=e.target.closest('.ch');if(!row)return;
   var idx=+row.dataset.idx;
-  if(e.key==='Enter'||e.key===' '){e.preventDefault();playIndex(idx);}
+  if(e.key==='Enter'||e.key===' '){e.preventDefault();playIndex(idx,true);}
   else if(e.key==='ArrowDown'){e.preventDefault();focusRow(idx+1);}
   else if(e.key==='ArrowUp'){e.preventDefault();focusRow(idx-1);}
 });
@@ -425,7 +640,7 @@ function scrollToIdx(i){
 listWrap.addEventListener('scroll',renderList,{passive:true});
 window.addEventListener('resize',renderList);
 
-/* ---------- chips / tabs ---------- */
+/* ---------- chips ---------- */
 chipsEl.addEventListener('click',function(e){
   var b=e.target.closest('.chip');if(!b)return;
   group=b.dataset.g;applyFilters(true);
@@ -436,13 +651,6 @@ $('chipRight').onclick=function(){scrollChips(1);};
 chipsEl.addEventListener('wheel',function(e){
   if(Math.abs(e.deltaY)>Math.abs(e.deltaX)&&chipsEl.scrollWidth>chipsEl.clientWidth){e.preventDefault();chipsEl.scrollLeft+=e.deltaY;}
 },{passive:false});
-document.querySelectorAll('.tab').forEach(function(b){
-  b.addEventListener('click',function(){
-    tab=b.dataset.tab;group='';
-    document.querySelectorAll('.tab').forEach(function(x){x.classList.toggle('on',x===b);x.setAttribute('aria-selected',x===b);});
-    applyFilters(true);
-  });
-});
 searchEl.addEventListener('input',function(){applyFilters(true);});
 $('clearSearch').addEventListener('click',function(){searchEl.value='';applyFilters(true);searchEl.focus();});
 
@@ -466,9 +674,6 @@ function buildProxiedUrl(url){
   return pre+url;
 }
 function resolveUrl(rel,base){try{return new URL(rel,base).href;}catch(e){return null;}}
-/* Rewrite every URI inside an m3u8 (variant playlists, segments, keys, maps, audio/subs)
-   to absolute URLs routed through the proxy. Without this, a dumb ?url= proxy breaks
-   multi-level HLS: relative entries would resolve against https://proxy/ instead of the real host. */
 function rewriteManifest(text,manifestUrl){
   var out=text.split(/\r?\n/);
   for(var i=0;i<out.length;i++){
@@ -488,8 +693,6 @@ function rewriteManifest(text,manifestUrl){
   }
   return out.join('\n');
 }
-/* Custom hls.js loader used ONLY in proxy mode. Fetches playlists + segments through the
-   proxy, rewriting nested manifests on the fly so relative URLs keep working. */
 function ProxyLoader(cfg){this.config=cfg||{};this.aborted=false;this.ctrl=null;}
 ProxyLoader.prototype.abort=function(){this.aborted=true;try{if(this.ctrl)this.ctrl.abort();}catch(e){}};
 ProxyLoader.prototype.destroy=function(){this.abort();this.ctrl=null;};
@@ -528,6 +731,7 @@ ProxyLoader.prototype.load=function(context,config,callbacks){
 };
 function setMeta(ch,viaProxy){
   $('meta').textContent=[ch.group,ch.tvgId].filter(Boolean).join(' · ')||ch.url;
+  $('descUrl').textContent=ch.url+(viaProxy?' · via proxy':'');
   $('proxyPill').hidden=!viaProxy;
 }
 function playRejected(e,ch,viaProxy,playUrl){
@@ -574,7 +778,7 @@ function onFatal(ch,detail,viaProxy,playUrl){
   $('errorDetail').textContent=detail;
   setOv('errorOv',true);
   updateCounts();
-  if(!showFailedEl.checked)renderList();
+  if(view==='home')renderHome(false);else if(!showFailedEl.checked)renderList();
   if(autoSkipEl.checked){toast('Offline — skipping…');setTimeout(function(){if(currentUrl===ch.url)step(1);},1200);}
 }
 function playChannel(ch,forceProxy){
@@ -587,7 +791,7 @@ function playChannel(ch,forceProxy){
   if(useProxy)triedProxyUrl=playUrl;
   $('currentName').textContent=ch.name;
   var nl=$('nowLogo');
-  if(ch.logo){nl.innerHTML='';var im=new Image();im.alt='';im.referrerPolicy='no-referrer';im.onload=function(){};im.onerror=function(){nl.textContent=safeInitial(ch.name);};im.src=ch.logo;im.style.cssText='width:100%;height:100%;object-fit:contain';nl.appendChild(im);}
+  if(ch.logo){nl.innerHTML='';var im=new Image();im.alt='';im.referrerPolicy='no-referrer';im.onerror=function(){nl.textContent=safeInitial(ch.name);};im.src=ch.logo;im.style.cssText='width:100%;height:100%;object-fit:contain';nl.appendChild(im);}
   else nl.textContent=safeInitial(ch.name);
   setMeta(ch,useProxy);
   $('livePill').hidden=false;
@@ -600,31 +804,33 @@ function playChannel(ch,forceProxy){
       navigator.mediaSession.setActionHandler('nexttrack',function(){step(1);});
       navigator.mediaSession.setActionHandler('previoustrack',function(){step(-1);});}catch(e){}
   }
-  renderList();
+  renderList();renderRail();
   startStream(playUrl,ch,useProxy);
 }
-function playIndex(i){
+function playIndex(i,toWatch){
   if(!filtered.length)return;
   i=Math.max(0,Math.min(filtered.length-1,i));
+  if(toWatch)showView('watch');
   playChannel(filtered[i]);scrollToIdx(i);
 }
 function step(d){
   if(!filtered.length)return;
   var idx=filtered.findIndex(function(c){return c.url===currentUrl;});
   if(idx<0)idx=d>0?-1:0;
-  playIndex((idx+d+filtered.length)%filtered.length);
+  playIndex((idx+d+filtered.length)%filtered.length,true);
 }
 function updateFavBtn(){
   var on=currentUrl&&favSet.has(currentUrl),b=$('favBtn');
-  b.textContent=on?'★ Favorited':'☆ Favorite';b.classList.toggle('on',!!on);
+  b.textContent=on?'★ Subscribed':'☆ Subscribe';b.classList.toggle('on',!!on);
 }
 function toggleFav(url){
   var was=favSet.has(url);
   if(was)favSet.delete(url);else favSet.add(url);
   sset('iptv_favs',JSON.stringify(Array.from(favSet)));
   toast(was?'Removed from favorites':'Added to favorites ★');
-  updateFavBtn();
-  if(tab==='fav')applyFilters(false);else renderList();
+  updateFavBtn();updateCounts();
+  if(tab==='fav')applyFilters(false);
+  else{renderList();renderHome(false);}
 }
 
 video.addEventListener('waiting',function(){if(currentUrl)setOv('bufferOv',true);});
@@ -692,20 +898,16 @@ function showSkeleton(){
   var h='';for(var i=0;i<9;i++)h+='<div class="skel"><b></b><span style="max-width:'+(40+(i*17)%45)+'%"></span></div>';
   listSpacer.style.height='auto';listSpacer.innerHTML=h;emptyMsg.style.display='none';
   countsEl.textContent='Loading playlist…';
+  grid.innerHTML='';$('gridMeta').textContent='Loading playlist…';
 }
 function loadText(text,label){
   allChannels=parseM3U(text);failedSet.clear();group='';
   applyFilters(true);
   if(!allChannels.length){emptyMsg.style.display='block';emptyMsg.textContent='No playable entries found in '+(label||'playlist')+'.';return;}
   toast(allChannels.length+' channels loaded');
-  var last=sget('iptv_last'),i=last?filtered.findIndex(function(c){return c.url===last;}):-1;
-  if(i>=0&&filtered[i]){currentChannel=filtered[i];currentUrl=last;
-    $('currentName').textContent=currentChannel.name;$('meta').textContent='Tap ▶ to resume · '+currentChannel.group;
-    scrollToIdx(i);
-  }else{
-    currentChannel=null;currentUrl=null;
-    $('currentName').textContent='Select a channel';$('meta').textContent=filtered.length+' available';
-  }
+  currentChannel=null;currentUrl=null;
+  $('currentName').textContent='No channel selected';$('meta').textContent='Pick a channel to start watching';
+  showView('home');
 }
 function loadUrl(url){
   if(!url)return;
@@ -718,7 +920,7 @@ function loadUrl(url){
      emptyMsg.innerHTML='⚠ Couldn\'t load playlist<br><small>'+esc((e&&e.message)||String(e))+'</small><br><br><button class="btn" id="retryLoad">Try again</button> <button class="btn ghost" id="openSet">Settings</button>';
      $('retryLoad').onclick=function(){loadUrl(url);};
      $('openSet').onclick=function(){openSettings();};
-     countsEl.textContent='Offline';
+     countsEl.textContent='Offline';$('gridMeta').textContent='Offline — check connection or settings.';
    });
 }
 $('loadBtn').onclick=function(){loadUrl(urlInput.value.trim());closeSettings();};
@@ -778,6 +980,7 @@ document.addEventListener('keydown',function(e){
   if(e.ctrlKey||e.metaKey||e.altKey)return;
   if(e.key==='/'&&!typing){e.preventDefault();searchEl.focus();}
   else if(e.key==='Escape'&&document.activeElement===searchEl){searchEl.blur();}
+  else if(e.key==='Escape'&&view==='watch'&&!dlgOpen){showView('home');}
   else if(typing)return;
   else if(e.key==='n'||e.key==='N')step(1);
   else if(e.key==='p'||e.key==='P')step(-1);
@@ -789,7 +992,9 @@ document.addEventListener('keydown',function(e){
 /* ---------- boot ---------- */
 urlInput.value=sget('iptv_url')||DEFAULT_URL;
 addCountryOptions(FALLBACK_COUNTRIES.map(function(f){return {code:f[0],name:f[1],flag:f[2]};}));
+bindCards(grid);bindCards(rail);
 syncCountrySelect(urlInput.value);
+showView('home');
 loadUrl(urlInput.value.trim());
 })();
 </script>
