@@ -371,6 +371,14 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
       </select>
     </div>
     <div class="field">
+      <label for="langSelect">Language (world feed)</label>
+      <select id="langSelect">
+        <option value="" selected>All languages (country playlist)</option>
+        <option value="hin">Hindi</option>
+        <option value="eng">English</option>
+      </select>
+    </div>
+    <div class="field">
       <label for="urlInput">Custom playlist URL (.m3u)</label>
       <div class="row">
         <input id="urlInput" type="text" spellcheck="false" inputmode="url" />
@@ -429,7 +437,7 @@ var GRID_PAGE=48;
 var $=function(id){return document.getElementById(id);};
 var video=$('video'),videoWrap=$('videoWrap'),listWrap=$('listWrap'),listSpacer=$('listSpacer'),emptyMsg=$('emptyMsg');
 var searchEl=$('search'),searchBox=$('searchBox'),chipsEl=$('chips'),countsEl=$('counts'),failedInfo=$('failedInfo');
-var urlInput=$('urlInput'),countrySelect=$('countrySelect'),proxySelect=$('proxySelect'),proxyCustom=$('proxyCustom');
+var urlInput=$('urlInput'),countrySelect=$('countrySelect'),langSelect=$('langSelect'),proxySelect=$('proxySelect'),proxyCustom=$('proxyCustom');
 var autoProxyEl=$('autoProxy'),showFailedEl=$('showFailed'),autoSkipEl=$('autoSkip');
 var settings=$('settings'),homeView=$('homeView'),watchView=$('watchView'),drawer=$('drawer'),scrim=$('scrim');
 var grid=$('grid'),rail=$('rail'),railWrap=$('railWrap'),moreBtn=$('moreBtn');
@@ -577,6 +585,7 @@ function updateCounts(){
   var src=urlInput.value.trim()||'';
   var srcName='Custom playlist';
   if(src.indexOf('/countries/')>0)srcName=src.split('/countries/')[1].split('.')[0].toUpperCase()+' playlist';
+  else if(src.indexOf('/languages/')>0)srcName=langName(src.split('/languages/')[1].split('.')[0])+' feed';
   else if(src.indexOf('/index.m3u')>0)srcName='World playlist';
   $('drawerFoot').textContent=allChannels.length+' channels · '+srcName+' · v'+APP_VERSION;
   var titles={all:'🔥 All channels',fav:'⭐ Favorites',recent:'🕘 Recently watched'};
@@ -1050,12 +1059,45 @@ syncProxyUI();
 
 function syncCountrySelect(url){
   var o=countrySelect.options;
-  for(var i=0;i<o.length;i++)if(o[i].value===url){countrySelect.value=url;return;}
+  for(var i=0;i<o.length;i++)if(o[i].value===url){countrySelect.value=url;syncLangSelect(url);return;}
+  if(url&&url.indexOf('/languages/')>0){
+    var lc=url.split('/languages/')[1].split('.')[0];
+    var n=document.createElement('option');n.value=url;n.textContent='Language ('+langName(lc)+')';countrySelect.appendChild(n);countrySelect.value=url;syncLangSelect(url);
+    return;
+  }
   if(url&&url.indexOf('/countries/')>0){
     var code=url.split('/countries/')[1].split('.')[0];
-    var n=document.createElement('option');n.value=url;n.textContent='Custom ('+code+')';countrySelect.appendChild(n);countrySelect.value=url;
+    var n2=document.createElement('option');n2.value=url;n2.textContent='Custom ('+code+')';countrySelect.appendChild(n2);countrySelect.value=url;
   }
+  syncLangSelect(url);
 }
+var FALLBACK_LANGS=[["hin","Hindi"],["eng","English"],["tam","Tamil"],["tel","Telugu"],["mal","Malayalam"],["kan","Kannada"],["ben","Bengali"],["mar","Marathi"],["pan","Punjabi"],["guj","Gujarati"],["ori","Odia"],["urd","Urdu"],["asm","Assamese"],["spa","Spanish"],["fra","French"],["deu","German"],["ita","Italian"],["por","Portuguese"],["rus","Russian"],["ara","Arabic"],["tur","Turkish"],["fas","Persian"],["jpn","Japanese"],["kor","Korean"],["zho","Chinese"],["ind","Indonesian"],["msa","Malay"],["tha","Thai"],["vie","Vietnamese"],["nld","Dutch"],["pol","Polish"],["ukr","Ukrainian"],["heb","Hebrew"]];
+function langName(c){for(var i=0;i<FALLBACK_LANGS.length;i++)if(FALLBACK_LANGS[i][0]===c)return FALLBACK_LANGS[i][1];return String(c||'').toUpperCase();}
+function addLangOptions(){
+  var seen={};langSelect.querySelectorAll('option').forEach(function(o){seen[o.value]=1;});
+  FALLBACK_LANGS.forEach(function(f){
+    if(seen[f[0]])return;
+    var n=document.createElement('option');n.value=f[0];n.textContent=f[1];langSelect.appendChild(n);
+  });
+}
+function syncLangSelect(url){
+  var m=String(url||'').toLowerCase().match(/\/languages\/([a-z]{3})\.m3u/);
+  langSelect.value=m?m[1]:'';
+  try{sset('iptv_lang',langSelect.value);}catch(e){}
+}
+langSelect.addEventListener('change',function(){
+  var code=langSelect.value;
+  try{sset('iptv_lang',code);}catch(e){}
+  if(!code){
+    var cu=countrySelect.value;
+    if(!cu||cu.indexOf('/languages/')>0)cu=DEFAULT_URL;
+    urlInput.value=cu;loadUrl(cu);
+  }else{
+    var u='https://iptv-org.github.io/iptv/languages/'+code+'.m3u';
+    urlInput.value=u;loadUrl(u);
+  }
+  closeSettings();
+});
 function addCountryOptions(arr){
   var seen={};countrySelect.querySelectorAll('option').forEach(function(o){seen[o.value]=1;});
   arr.slice().sort(function(a,b){return a.name.localeCompare(b.name);}).forEach(function(c){
@@ -1067,6 +1109,7 @@ function addCountryOptions(arr){
   syncCountrySelect(urlInput.value.trim());
 }
 countrySelect.addEventListener('change',function(){
+  langSelect.value='';try{sset('iptv_lang','');}catch(e){}
   urlInput.value=countrySelect.value;loadUrl(countrySelect.value);closeSettings();
 });
 fetch('https://iptv-org.github.io/api/countries.json').then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(arr){
@@ -1099,6 +1142,7 @@ try{console.log('[tuner] v'+APP_VERSION);}catch(e){}
 window.addEventListener('error',function(){try{toast('Oops — something glitched. Reload if it sticks.');}catch(_){}});
 urlInput.value=sget('iptv_url')||DEFAULT_URL;
 addCountryOptions(FALLBACK_COUNTRIES.map(function(f){return {code:f[0],name:f[1],flag:f[2]};}));
+addLangOptions();
 bindCards(grid);bindCards(rail);
 syncCountrySelect(urlInput.value);
 showView('home');
