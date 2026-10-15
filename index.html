@@ -334,12 +334,14 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
         <button class="act primary" id="favBtn" title="Favorite (F)">☆ Subscribe</button>
         <button class="act" id="prevBtn" title="Previous (P)">⏮ Prev</button>
         <button class="act" id="nextBtn" title="Next (N)">Next ⏭</button>
+        <button class="act" id="sleepBtn" title="Sleep timer">⏲ Off</button>
         <button class="act" id="proxyBtn" title="Play through proxy">🔁 Via proxy</button>
+        <select class="act" id="qSelect" title="Quality (HLS only)" disabled><option value="auto">Auto quality</option></select>
         <button class="act" id="pipBtn" title="Picture-in-picture" hidden>🗗 PiP</button>
         <button class="act" id="fsBtn" title="Fullscreen">⛶ Fullscreen</button>
         <button class="act" id="copyBtn" title="Copy stream URL">🔗 Share</button>
       </div>
-      <div class="desc" id="descBox">Stream details appear here.<small id="descUrl"></small></div>
+      <div class="desc" id="descBox"><div id="epgLine">Guide info appears here when an EPG is loaded (Setup).</div><small id="descUrl"></small></div>
       <div class="kbd-hint">Shortcuts: <kbd>/</kbd> search · <kbd>↑</kbd><kbd>↓</kbd> browse · <kbd>Enter</kbd> play · <kbd>N</kbd>/<kbd>P</kbd> next/prev · <kbd>F</kbd> favorite · <kbd>Space</kbd> pause · <kbd>M</kbd> mute</div>
     </section>
     <section class="list-pane" aria-label="Up next">
@@ -390,6 +392,11 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
       <input id="fileInput" type="file" accept=".m3u,.m3u8,.txt,text/plain" hidden />
     </div>
     <div class="field">
+      <label for="epgInput">TV guide URL (XMLTV, optional)</label>
+      <input id="epgInput" type="text" spellcheck="false" inputmode="url" placeholder="https://example.com/guide.xml" />
+      <small id="epgStatus" style="color:var(--muted);font-size:12px">No guide loaded — shows Now/Next on player and cards.</small>
+    </div>
+    <div class="field">
       <label for="proxySelect">CORS proxy</label>
       <select id="proxySelect">
         <option value="direct">Direct (no proxy)</option>
@@ -403,6 +410,15 @@ dialog::backdrop{background:#000a;backdrop-filter:blur(2px)}
     <label class="switch"><span>Auto-retry failed channels via proxy</span><input type="checkbox" id="autoProxy" checked /></label>
     <label class="switch"><span>Show channels that failed this session</span><input type="checkbox" id="showFailed" /></label>
     <label class="switch"><span>Auto-skip to next channel on failure</span><input type="checkbox" id="autoSkip" /></label>
+    <label class="switch"><span>Show adult (18+) channels</span><input type="checkbox" id="showAdult" /></label>
+    <div class="field">
+      <label>Favorites backup</label>
+      <div class="row">
+        <button class="btn ghost" id="favExport">Export</button>
+        <button class="btn ghost" id="favImport">Import</button>
+      </div>
+      <input id="favFile" type="file" accept=".json,application/json" hidden />
+    </div>
     <div class="faq">
       <details><summary>Why do channels fail?</summary><p>Three usual causes: the link is dead (404), the source server is down (5xx), or the browser is blocked — CORS, mixed-content (http on an https page), hotlink protection, or geo-blocking (403). The player retries via proxy automatically and tells you which one it found.</p></details>
       <details><summary>Geo-blocked? (403 on everything)</summary><p>Streams check your exit IP. Public proxies exit in the US/EU, so country-locked channels still fail. Fix: a VPN, or your own proxy in that country (server.js on a VPS there → Custom proxy here).</p></details>
@@ -437,13 +453,14 @@ var GRID_PAGE=48;
 var $=function(id){return document.getElementById(id);};
 var video=$('video'),videoWrap=$('videoWrap'),listWrap=$('listWrap'),listSpacer=$('listSpacer'),emptyMsg=$('emptyMsg');
 var searchEl=$('search'),searchBox=$('searchBox'),chipsEl=$('chips'),countsEl=$('counts'),failedInfo=$('failedInfo');
-var urlInput=$('urlInput'),countrySelect=$('countrySelect'),langSelect=$('langSelect'),proxySelect=$('proxySelect'),proxyCustom=$('proxyCustom');
-var autoProxyEl=$('autoProxy'),showFailedEl=$('showFailed'),autoSkipEl=$('autoSkip');
+var urlInput=$('urlInput'),countrySelect=$('countrySelect'),langSelect=$('langSelect'),proxySelect=$('proxySelect'),proxyCustom=$('proxyCustom'),epgInput=$('epgInput');
+var autoProxyEl=$('autoProxy'),showFailedEl=$('showFailed'),autoSkipEl=$('autoSkip'),showAdultEl=$('showAdult');
 var settings=$('settings'),homeView=$('homeView'),watchView=$('watchView'),drawer=$('drawer'),scrim=$('scrim');
 var grid=$('grid'),rail=$('rail'),railWrap=$('railWrap'),moreBtn=$('moreBtn');
 
 var allChannels=[],filtered=[],failedSet=new Set(),favSet=new Set(),recent=[];
 var group='',tab='all',view='home',gridShown=0;
+var epgMap={},epgByName={},sleepTO=null,pendingQ='auto';
 var currentChannel=null,currentUrl=null,hls=null,raf=null,triedProxyUrl=null,toastT=null;
 
 function sget(k){try{return localStorage.getItem(k);}catch(e){return null;}}
@@ -451,6 +468,7 @@ function sset(k,v){try{localStorage.setItem(k,v);}catch(e){}}
 try{favSet=new Set(JSON.parse(sget('iptv_favs')||'[]'));}catch(e){}
 try{recent=JSON.parse(sget('iptv_recent')||'[]');}catch(e){recent=[];}
 showFailedEl.checked=sget('iptv_showFailed')==='1';
+showAdultEl.checked=sget('iptv_showAdult')==='1';
 autoSkipEl.checked=sget('iptv_autoskip')==='1';
 var _sp=sget('iptv_proxy');
 if(_sp==='corsproxy'){proxySelect.value='allorigins';sset('iptv_proxy','allorigins');}
@@ -530,7 +548,11 @@ function parseM3U(text){
       url=n;i=j;break;
     }
     if(!url)continue;
-    out.push({name:name||url,logo:attr(line,'tvg-logo'),group:(attr(line,'group-title')||'Ungrouped').split(';')[0],tvgId:attr(line,'tvg-id'),url:url});
+    var _grp=(attr(line,'group-title')||'Ungrouped').split(';')[0];
+    var _nm=name||url;
+    var _s=_grp+' '+_nm;
+    var _adult=/\b(xxx|porn|playboy)\b|18\+/i.test(_nm)||/\b(xxx|porn|playboy|adults|sex)\b|18\+/i.test(_grp)||(/\badult\b/i.test(_grp)&&!/adult\s+swim/i.test(_grp));
+    out.push({name:_nm,logo:attr(line,'tvg-logo'),group:_grp,tvgId:attr(line,'tvg-id'),url:url,adult:_adult});
   }
   return out;
 }
@@ -560,6 +582,7 @@ function applyFilters(reset){
   buildChips();
   chipsEl.scrollLeft=_sc;
   filtered=baseSet().filter(function(c){
+    if(c.adult&&!showAdultEl.checked)return false;
     if(!showFailed&&failedSet.has(c.url))return false;
     if(group&&c.group!==group)return false;
     if(q&&c.name.toLowerCase().indexOf(q)<0)return false;
@@ -596,12 +619,14 @@ function updateCounts(){
 /* ---------- home: rail + grid ---------- */
 function cardHTML(c,i,isRail){
   var init=safeInitial(c.name),fav=favSet.has(c.url);
+  var eg=epgForChannel(c);
+  var meta=c.group+(eg&&eg.now?' · ▶ '+eg.now.title:'');
   var thumb=c.logo?'<img loading="lazy" src="'+esc(c.logo)+'" alt="" onerror="this.remove()">':'<span class="fallback">'+init+'</span>';
   return '<div class="card" style="--i:'+(i%GRID_PAGE)+'" data-url="'+esc(c.url)+'" tabindex="0" role="button" aria-label="Play '+esc(c.name)+'">'
     +'<div class="thumb">'+thumb+'<span class="live-badge"><i></i>LIVE</span><span class="play-ov">▶</span></div>'
     +'<button class="card-fav'+(fav?' on':'')+'" data-cardfav="1" aria-label="'+(fav?'Remove favorite':'Add favorite')+'">'+(fav?'★':'☆')+'</button>'
     +'<div class="card-body"><div class="avatar">'+(c.logo?'<img loading="lazy" src="'+esc(c.logo)+'" alt="" onerror="this.remove()">':init)+'</div>'
-    +'<div class="card-txt"><div class="card-name">'+esc(c.name)+'</div><div class="card-meta">'+esc(c.group)+'</div></div></div></div>';
+    +'<div class="card-txt"><div class="card-name">'+esc(c.name)+'</div><div class="card-meta">'+esc(meta)+'</div></div></div></div>';
 }
 function renderRail(){
   var map={};allChannels.forEach(function(c){map[c.url]=c;});
@@ -614,7 +639,8 @@ function renderHome(reset){
   if(reset)gridShown=0;
   if(gridShown===0)gridShown=Math.min(GRID_PAGE,filtered.length);
   grid.innerHTML=filtered.slice(0,gridShown).map(function(c,i){return cardHTML(c,i,false);}).join('');
-  $('gridMeta').textContent='Showing '+Math.min(gridShown,filtered.length)+' of '+filtered.length;
+  var _ah=(!showAdultEl.checked)?allChannels.filter(function(c){return c.adult;}).length:0;
+  $('gridMeta').textContent='Showing '+Math.min(gridShown,filtered.length)+' of '+filtered.length+(_ah?' · '+_ah+' adult hidden':'');
   moreBtn.style.display=gridShown<filtered.length?'block':'none';
   if(reset)homeView.scrollTop=0;
 }
@@ -649,11 +675,13 @@ function renderList(){
     var html='';
     for(var i=s;i<e;i++){
       var c=filtered[i],active=c.url===currentUrl,fav=favSet.has(c.url),failed=failedSet.has(c.url);
+      var eg2=epgForChannel(c);
+      var sub=c.group+(eg2&&eg2.now?' · ▶ '+eg2.now.title:'');
       var init=safeInitial(c.name);
       var logo=c.logo?'<img loading="lazy" src="'+esc(c.logo)+'" alt="" data-init="'+init+'" onerror="this.remove()">':init;
       html+='<div class="ch'+(active?' active':'')+(failed?' failed':'')+'" style="top:'+(i*H)+'px" role="option" tabindex="0" data-idx="'+i+'" aria-selected="'+active+'">'
         +'<div class="ch-logo">'+logo+'</div>'
-        +'<div class="ch-txt"><div class="ch-name">'+esc(c.name)+'</div><div class="ch-grp">'+esc(c.group)+'</div></div>'
+        +'<div class="ch-txt"><div class="ch-name">'+esc(c.name)+'</div><div class="ch-grp">'+esc(sub)+'</div></div>'
         +(active&&!failed?'<span class="playing-dot" title="Now playing"></span>':'')
         +(failed?'<span class="badge">offline</span>':'')
         +'<button class="fav'+(fav?' on':'')+'" tabindex="-1" data-fav="1" aria-label="'+(fav?'Remove favorite':'Add favorite')+'">'+(fav?'★':'☆')+'</button></div>';
@@ -797,7 +825,7 @@ function startStream(playUrl,ch,viaProxy){
       if(viaProxy){hlsCfg.loader=ProxyLoader;hlsCfg.pLoader=ProxyLoader;hlsCfg.fLoader=ProxyLoader;}
       hls=new Hls(hlsCfg);
       hls.loadSource(playUrl);hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED,function(){video.play().catch(function(e){playRejected(e,ch,viaProxy,playUrl);});});
+      hls.on(Hls.Events.MANIFEST_PARSED,function(){buildQualityOptions();video.play().catch(function(e){playRejected(e,ch,viaProxy,playUrl);});});
       hls.on(Hls.Events.ERROR,function(ev,d){
         if(d&&d.fatal){
           if(d.type==='mediaError'&&!hls._recovered){hls._recovered=true;try{hls.recoverMediaError();return;}catch(e){}}
@@ -906,6 +934,7 @@ function playChannel(ch,forceProxy){
       navigator.mediaSession.setActionHandler('nexttrack',function(){step(1);});
       navigator.mediaSession.setActionHandler('previoustrack',function(){step(-1);});}catch(e){}
   }
+  resetQuality();renderEpgBox(ch);
   renderList();renderRail();
   startStream(playUrl,ch,useProxy);
 }
@@ -1003,6 +1032,78 @@ if(document.pictureInPictureEnabled){
   }
 })();
 
+/* ---------- EPG (XMLTV) ---------- */
+function epgTime(s){
+  var m=String(s||'').match(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})?\s*([+-]\d{4}|Z)?/);
+  if(!m)return null;
+  var off=m[7]||'';
+  if(off==='Z')off='+00:00';
+  else if(/^[+-]\d{4}$/.test(off))off=off.slice(0,3)+':'+off.slice(3);
+  try{return new Date(m[1]+'-'+m[2]+'-'+m[3]+'T'+m[4]+':'+m[5]+':'+(m[6]||'00')+off).getTime();}
+  catch(e){return null;}
+}
+function normName(s){return String(s||'').toLowerCase().replace(/\b(uhd|fhd|hd|sd|4k|8k|tv|channel)\b/g,' ').replace(/[^a-z0-9\u0900-\u097f]+/g,' ').replace(/\s+/g,' ').trim();}
+function loadEPG(url,silent){
+  if(!url){epgMap={};epgByName={};var st0=$('epgStatus');if(st0)st0.textContent='No guide loaded — shows Now/Next on player and cards.';renderEpgBox(currentChannel);renderHome(false);return;}
+  var st=$('epgStatus');if(st)st.textContent='Loading guide…';
+  fetch(url).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();})
+  .then(function(t){parseEPG(t);if(st)st.textContent=Object.keys(epgMap).length+' channels with guide data';})
+  .catch(function(e){if(st)st.textContent='Guide failed: '+((e&&e.message)||e);if(!silent)toast('EPG load failed');});
+}
+function parseEPG(xml){
+  epgMap={};epgByName={};
+  var doc=new DOMParser().parseFromString(xml,'text/xml');
+  if(doc.querySelector('parsererror'))throw new Error('bad xml');
+  var tmp={};
+  var progs=doc.getElementsByTagName('programme');
+  for(var i=0;i<progs.length;i++){
+    var p=progs[i],cid=p.getAttribute('channel');if(!cid)continue;
+    var pst=epgTime(p.getAttribute('start'));
+    if(pst==null)continue;
+    var psp=epgTime(p.getAttribute('stop'));
+    var tn=p.getElementsByTagName('title')[0];
+    (tmp[cid]=tmp[cid]||[]).push({start:pst,stop:psp||pst+3600000,title:tn?tn.textContent.trim():'(untitled)'});
+  }
+  Object.keys(tmp).forEach(function(k){tmp[k].sort(function(a,b){return a.start-b.start;});});
+  var nameIdx={};
+  var chans=doc.getElementsByTagName('channel');
+  for(var j=0;j<chans.length;j++){
+    var c=chans[j],id=c.getAttribute('id');if(!id)continue;
+    var dn=c.getElementsByTagName('display-name')[0];
+    if(dn)nameIdx[normName(dn.textContent)]=id;
+  }
+  epgMap=tmp;epgByName=nameIdx;
+  renderEpgBox(currentChannel);renderHome(false);renderList();
+}
+function epgForChannel(ch){
+  if(!ch||!Object.keys(epgMap).length)return null;
+  var k=null;
+  if(ch.tvgId){var b=ch.tvgId.split('@')[0];if(epgMap[b])k=b;}
+  if(!k){var nk=normName(ch.name);if(epgByName[nk]&&epgMap[epgByName[nk]])k=epgByName[nk];}
+  if(!k)return null;
+  var arr=epgMap[k],t=Date.now(),now=null,next=null;
+  for(var i=0;i<arr.length;i++){
+    if(arr[i].start<=t&&(arr[i].stop==null||t<arr[i].stop)){now=arr[i];next=arr[i+1]||null;break;}
+    if(arr[i].start>t){next=arr[i];break;}
+  }
+  return (now||next)?{now:now,next:next}:null;
+}
+function epgNowFor(url){
+  if(!url)return null;
+  var ch=allChannels.find(function(c){return c.url===url;});
+  return ch?epgForChannel(ch):null;
+}
+function fmtT(ts){try{return new Date(ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch(e){return '';}}
+function renderEpgBox(ch){
+  var el=$('epgLine');if(!el)return;
+  if(!ch){el.textContent='Guide info appears here when an EPG is loaded (Setup).';return;}
+  var e=epgForChannel(ch);
+  if(!e){el.textContent=Object.keys(epgMap).length?'No guide data for this channel.':'Guide info appears here when an EPG is loaded (Setup).';return;}
+  var h='';
+  if(e.now)h+='▶ Now: <b>'+esc(e.now.title)+'</b>'+(e.now.stop?' <small>till '+fmtT(e.now.stop)+'</small>':'');
+  if(e.next)h+=(h?'<br>':'')+'⏭ Next: <b>'+esc(e.next.title)+'</b> <small>'+fmtT(e.next.start)+'</small>';
+  el.innerHTML=h;
+}
 /* ---------- loading ---------- */
 function showSkeleton(){
   var h='';for(var i=0;i<9;i++)h+='<div class="skel"><b></b><span style="max-width:'+(40+(i*17)%45)+'%"></span></div>';
@@ -1055,6 +1156,87 @@ proxyCustom.addEventListener('input',function(){sset('iptv_proxy_custom',proxyCu
 autoProxyEl.addEventListener('change',function(){sset('iptv_autoproxy',autoProxyEl.checked?'1':'0');});
 autoSkipEl.addEventListener('change',function(){sset('iptv_autoskip',autoSkipEl.checked?'1':'0');});
 showFailedEl.addEventListener('change',function(){sset('iptv_showFailed',showFailedEl.checked?'1':'0');applyFilters(false);});
+showAdultEl.addEventListener('change',function(){sset('iptv_showAdult',showAdultEl.checked?'1':'0');applyFilters(false);});
+/* ---------- quality ---------- */
+function resetQuality(){var q=$('qSelect');q.innerHTML='<option value="auto">Auto quality</option>';q.value='auto';q.disabled=true;q.title='Quality (HLS only)';}
+function buildQualityOptions(){
+  var q=$('qSelect');
+  if(!hls||!hls.levels||!hls.levels.length){resetQuality();return;}
+  var hs=[];hls.levels.forEach(function(l){var h=l.height||0;if(h&&hs.indexOf(h)<0)hs.push(h);});
+  hs.sort(function(a,b){return b-a;});
+  if(!hs.length){resetQuality();return;}
+  q.innerHTML='<option value="auto">Auto quality</option>'+hs.map(function(h){return '<option value="'+h+'">'+h+'p</option>';}).join('');
+  q.disabled=false;q.title='Quality';
+  applyQuality();
+}
+function applyQuality(){
+  var q=$('qSelect');if(!hls||!hls.levels||!hls.levels.length)return;
+  var v=pendingQ||'auto';
+  if(v==='auto'){q.value='auto';try{hls.currentLevel=-1;}catch(e){}return;}
+  var cap=parseInt(v,10),best=-1,bh=0;
+  hls.levels.forEach(function(l,i){var h=l.height||0;if(h&&h<=cap&&h>bh){bh=h;best=i;}});
+  if(best<0)best=hls.levels.length-1;
+  q.value=String(hls.levels[best].height||cap);
+  try{hls.currentLevel=best;}catch(e){}
+}
+$('qSelect').addEventListener('change',function(){
+  pendingQ=$('qSelect').value||'auto';
+  try{sset('tuner_q',pendingQ);}catch(e){}
+  applyQuality();
+  toast(pendingQ==='auto'?'Quality: Auto':'Quality: up to '+pendingQ+'p');
+});
+/* ---------- sleep timer ---------- */
+var SLEEP_STEPS=[0,15,30,60,120];
+function setSleep(min){
+  if(sleepTO){clearTimeout(sleepTO);sleepTO=null;}
+  var b=$('sleepBtn');
+  if(!min){b.textContent='⏲ Off';b.classList.remove('on');b.title='Sleep timer';return;}
+  b.textContent='⏲ '+min+'m';b.classList.add('on');
+  try{b.title='Stops at '+new Date(Date.now()+min*60000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch(e){}
+  toast('Sleep timer: '+min+' min');
+  sleepTO=setTimeout(function(){
+    sleepTO=null;
+    try{video.pause();}catch(e){}
+    var bb=$('sleepBtn');bb.textContent='⏲ Off';bb.classList.remove('on');bb.title='Sleep timer';
+    toast('😴 Sleep timer stopped playback');
+  },min*60000);
+}
+$('sleepBtn').onclick=function(){
+  var m=$('sleepBtn').textContent.match(/(\d+)m/);
+  var idx=m?SLEEP_STEPS.indexOf(parseInt(m[1],10)):0;
+  setSleep(SLEEP_STEPS[(idx+1)%SLEEP_STEPS.length]);
+};
+/* ---------- favorites backup ---------- */
+$('favExport').onclick=function(){
+  var items=Array.from(favSet).map(function(u){var c=allChannels.find(function(x){return x.url===u;});return {url:u,name:c?c.name:u,group:c?c.group:''};});
+  var blob=new Blob([JSON.stringify({app:'tuner',version:APP_VERSION,exported:new Date().toISOString(),items:items},null,2)],{type:'application/json'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='tuner-favorites.json';document.body.appendChild(a);a.click();
+  setTimeout(function(){try{URL.revokeObjectURL(a.href);}catch(e){}a.remove();},500);
+  toast(items.length+' favorites exported');
+};
+$('favImport').onclick=function(){$('favFile').click();};
+$('favFile').addEventListener('change',function(){
+  var f=this.files&&this.files[0];if(!f)return;
+  var rd=new FileReader();
+  rd.onload=function(){
+    try{
+      var d=JSON.parse(String(rd.result||'{}'));
+      var arr=d.items||d;
+      if(!Array.isArray(arr))throw new Error('bad file');
+      var n=0;
+      arr.forEach(function(it){var u=typeof it==='string'?it:it.url;if(u&&/^https?:\/\//i.test(u)&&!favSet.has(u)){favSet.add(u);n++;}});
+      saveFavs();updateCounts();applyFilters(false);
+      toast(n+' favorites imported');
+    }catch(e){toast('Import failed — not a Tuner backup');}
+  };
+  rd.readAsText(f);this.value='';
+});
+/* ---------- epg input ---------- */
+$('epgInput').addEventListener('change',function(){
+  var u=$('epgInput').value.trim();
+  try{sset('iptv_epg',u);}catch(e){}
+  loadEPG(u);
+});
 syncProxyUI();
 
 function syncCountrySelect(url){
@@ -1147,6 +1329,8 @@ bindCards(grid);bindCards(rail);
 syncCountrySelect(urlInput.value);
 showView('home');
 detectRegion();
+try{pendingQ=sget('tuner_q')||'auto';}catch(e){}
+try{var _eu=sget('iptv_epg');if(_eu){epgInput.value=_eu;loadEPG(_eu,true);}}catch(e){}
 try{
   var _vv=parseFloat(sget('tuner_vol'));
   if(!isNaN(_vv))video.volume=Math.min(1,Math.max(0,_vv));
