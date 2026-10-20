@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0e13">
+<title>Tuner Remote</title>
+<style>
+  /* Phone remote — deliberately simple: dark, huge tap targets, no scrolling. */
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;padding:14px 14px calc(16px + env(safe-area-inset-bottom));
+    background:#0b0e13;color:#e9eef7;
+    font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex;flex-direction:column;gap:14px;max-width:560px;margin:0 auto;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .brand{font-size:18px;font-weight:800;letter-spacing:.3px;display:flex;align-items:center;gap:8px}
+  .status{
+    font-size:13px;font-weight:600;border-radius:10px;padding:9px 12px;
+    background:#121722;border:1px solid #222a39;color:#9aa7bd;
+  }
+  .status.ok{color:#9fe870;border-color:#2d4a22;background:#0d1409}
+  .status.wait{color:#ffd166;border-color:#5b4a14;background:#161204}
+  .status.err{color:#ff9c9c;border-color:#5a2a2a;background:#170b0b}
+  #joinView{display:flex;flex-direction:column;gap:10px}
+  #joinView label{font-size:13px;color:#9aa7bd;font-weight:600}
+  #code{
+    width:100%;height:64px;border-radius:14px;border:1px solid #2a3346;background:#121722;
+    color:#fff;text-align:center;font:700 28px/1 ui-monospace,Menlo,monospace;letter-spacing:6px;
+    text-transform:uppercase;outline:none;
+  }
+  #code:focus{border-color:#4f8cff}
+  button{
+    border:0;border-radius:16px;background:#182031;color:#e9eef7;
+    font:600 17px/1.2 system-ui,sans-serif;min-height:56px;padding:12px;
+    touch-action:manipulation;user-select:none;cursor:pointer;
+  }
+  button:active{transform:scale(.97);filter:brightness(1.15)}
+  .primary{background:#2f6bff;color:#fff;font-weight:700}
+  .ghost{background:transparent;border:1px solid #2a3346;color:#9aa7bd;min-height:48px}
+  .hint{color:#6f7c92;font-size:13px;margin:0}
+  #ctrlView{display:flex;flex-direction:column;gap:14px}
+  .now{
+    background:#121722;border:1px solid #222a39;border-radius:14px;padding:12px 14px;
+    display:flex;flex-direction:column;gap:2px;
+  }
+  .now-label{font-size:11px;letter-spacing:1.6px;text-transform:uppercase;color:#6f7c92;font-weight:700}
+  .now-name{font-size:20px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .now-meta{display:flex;gap:14px;font-size:13px;color:#9aa7bd}
+  .pad{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .pad .big{
+    min-height:88px;font-size:22px;font-weight:800;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:4px;background:#182031;border:1px solid #242e42;
+  }
+  .pad .big b{font-size:26px;line-height:1}
+  .pad .big span{font-size:12px;font-weight:600;color:#9aa7bd;letter-spacing:.6px;text-transform:uppercase}
+  .pad .power{background:#2a1518;border-color:#5a2a2a;color:#ffb4b4}
+  .pad .power span{color:#ffb4b4}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+
+<div class="brand">📺 Tuner Remote</div>
+<div id="status" class="status">Enter the 8-character code shown on your TV</div>
+
+<section id="joinView">
+  <label for="code">Pairing code</label>
+  <input id="code" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="9" placeholder="ABCD EFGH" aria-label="Pairing code">
+  <button id="joinBtn" class="primary" type="button">Connect</button>
+  <p class="hint">On the TV: open a channel → <b>📱 Remote</b>. The TV must run <code>node server.js</code> and both devices must be on the same Wi-Fi.</p>
+</section>
+
+<section id="ctrlView" hidden>
+  <div class="now">
+    <div class="now-label">Now playing</div>
+    <div class="now-name" id="nowName">—</div>
+    <div class="now-meta"><span id="volLabel">Vol 100%</span><span id="muteLabel"></span><span id="powerLabel"></span></div>
+  </div>
+
+  <div class="pad">
+    <button type="button" class="big" data-cmd="chup">CH <b>▲</b><span>Next channel</span></button>
+    <button type="button" class="big" data-cmd="chdown">CH <b>▼</b><span>Previous</span></button>
+    <button type="button" class="big" data-cmd="volup">VOL <b>+</b><span>Louder</span></button>
+    <button type="button" class="big" data-cmd="voldown">VOL <b>−</b><span>Quieter</span></button>
+    <button type="button" class="big" data-cmd="mute">🔊 <span>Mute</span></button>
+    <button type="button" class="big power" data-cmd="power">⏻ <span>Power</span></button>
+  </div>
+
+  <button id="leaveBtn" class="ghost" type="button">Disconnect</button>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var params = new URLSearchParams(location.search);
+  var ws = null;
+  var code = params.get('code') || '';
+  var statusEl = $('status');
+  var joinView = $('joinView');
+  var ctrlView = $('ctrlView');
+  var codeEl = $('code');
+
+  // ?ws=ws://host:port/remote-ws overrides (e.g. behind a tunnel / wss).
+  var wsBase = params.get('ws');
+  if (!wsBase) {
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var port = location.port || '8080'; // server.js default
+    wsBase = proto + '//' + location.hostname + ':' + port + '/remote-ws';
+  }
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className = 'status ' + (cls || '');
+  }
+  function showControls(on) {
+    ctrlView.hidden = !on;
+    joinView.hidden = on;
+  }
+  function fmtCode(v) {
+    v = String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+    return v.length > 4 ? v.slice(0, 4) + ' ' + v.slice(4) : v;
+  }
+  function send(obj) {
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify(obj));
+      return true;
+    }
+    setStatus('Not connected', 'err');
+    return false;
+  }
+  function fail(message) {
+    setStatus(message, 'err');
+    showControls(false);
+    if (ws) {
+      try { ws.close(); } catch (e) {}
+      ws = null;
+    }
+  }
+
+  codeEl.addEventListener('input', function () { codeEl.value = fmtCode(codeEl.value); });
+
+  function connect() {
+    var c = String(codeEl.value || code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (c.length !== 8) {
+      setStatus('Enter the full 8-character code', 'err');
+      return;
+    }
+    code = c;
+    if (ws) { try { ws.close(); } catch (e) {} ws = null; }
+    setStatus('Connecting…', 'wait');
+    var sep = wsBase.indexOf('?') < 0 ? '?' : '&';
+    var url = wsBase + sep + 'role=phone&code=' + encodeURIComponent(c);
+    try {
+      ws = new WebSocket(url);
+    } catch (e) {
+      setStatus('Bad remote server URL', 'err');
+      return;
+    }
+    ws.onopen = function () { setStatus('Connected — waiting for the TV…', 'ok'); };
+    ws.onmessage = function (ev) {
+      var m;
+      try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.type === 'joined') {
+        setStatus('Connected to TV', 'ok');
+        showControls(true);
+      } else if (m.type === 'state') {
+        applyState(m.state || {});
+      } else if (m.type === 'error') {
+        fail(m.message || 'Connection error');
+      }
+    };
+    ws.onclose = function () {
+      ws = null;
+      setStatus(ctrlView.hidden ? 'Disconnected' : 'Disconnected — reconnect to continue', 'err');
+      if (!ctrlView.hidden) setStatus('Disconnected — tap Disconnect, then Connect', 'err');
+    };
+  }
+
+  function applyState(s) {
+    $('nowName').textContent = s.name || '—';
+    $('volLabel').textContent = 'Vol ' + Math.round(s.volume || 0) + '%';
+    $('muteLabel').textContent = s.muted ? '🔇 Muted' : '';
+    $('powerLabel').textContent = s.playing ? '▶ Playing' : (s.view === 'watch' ? '⏸ Paused' : '⏻ Off');
+  }
+
+  function command(action) {
+    if (!send({ type: 'cmd', action: action })) return;
+    try { if (navigator.vibrate) navigator.vibrate(12); } catch (e) {}
+    setStatus('Sent — waiting for TV', 'ok');
+    setTimeout(function () { if (ws && ws.readyState === 1) setStatus('Connected to TV', 'ok'); }, 700);
+  }
+
+  document.querySelectorAll('[data-cmd]').forEach(function (b) {
+    b.addEventListener('click', function () { command(b.dataset.cmd); });
+  });
+  $('joinBtn').addEventListener('click', connect);
+  $('leaveBtn').addEventListener('click', function () {
+    if (ws) { try { ws.close(); } catch (e) {} ws = null; }
+    showControls(false);
+    setStatus('Disconnected', '');
+  });
+
+  if (code) {
+    codeEl.value = fmtCode(code);
+    connect();
+  } else {
+    codeEl.focus();
+  }
+
+  // Keeps the socket warm while the phone sleeps.
+  setInterval(function () {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'ping' }));
+  }, 20000);
+})();
+</script>
+</body>
+</html>

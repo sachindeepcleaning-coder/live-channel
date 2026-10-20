@@ -328,6 +328,50 @@ a.nav-item{text-decoration:none}
 .g-empty small{display:block;margin-top:8px;color:#6b7a93}
 @media (max-width:899px){.guide-scroll{max-height:calc(100dvh - 240px)}:root{--g-ch:132px}.g-p i{display:none}}
 @media (prefers-reduced-motion:reduce){.skel-card .sk-thumb,.skel-card .sk-line{animation:none}}
+
+/* ---------- v2.1: CRT Mode ---------- */
+/* body.crt drives the whole look; overlays are pointer-events:none so playback stays usable. */
+body.crt .actions,body.crt .desc,body.crt .kbd-hint{display:none}
+body.crt .list-pane,body.crt .topbar,body.crt .chips-row,body.crt #bottomNav{display:none}
+body.crt .player-pane{max-width:1150px;margin:0 auto;width:100%}
+body.crt .video-wrap{border:12px solid #15161a;border-radius:24px;max-height:72dvh;box-shadow:inset 0 0 70px #000,0 22px 55px #0009,0 0 0 2px #26282f;background:#050607}
+body.crt video{filter:contrast(1.12) brightness(.94) saturate(1.1)}
+.crt-fx{display:none;position:absolute;inset:0;z-index:1;pointer-events:none;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 52%,rgba(0,0,0,.52) 100%),repeating-linear-gradient(to bottom,rgba(0,0,0,.28) 0 1px,rgba(255,255,255,.025) 1px 3px);mix-blend-mode:multiply;animation:crtFlicker 5s steps(70) infinite}
+.crt-fx::after{content:'';position:absolute;inset:-30%;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");opacity:.06;animation:crtGrain .7s steps(3) infinite}
+body.crt .crt-fx{display:block}
+@keyframes crtFlicker{0%,100%{opacity:1}48%{opacity:.96}50%{opacity:.92}52%{opacity:.97}}
+@keyframes crtGrain{0%{transform:translate(0,0)}33%{transform:translate(-3%,2%)}66%{transform:translate(2%,-3%)}100%{transform:translate(0,0)}}
+.crt-zap{display:none;position:absolute;inset:0;z-index:2;pointer-events:none}
+.crt-zap.on{display:block;animation:crtZap .4s steps(1) both}
+.crt-zap::before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(90deg,#fff 0 2px,#111 2px 4px,#8d8d8d 4px 7px),repeating-linear-gradient(0deg,rgba(255,255,255,.45) 0 1px,transparent 1px 5px);opacity:.9;filter:contrast(2) blur(.4px)}
+.crt-zap::after{content:'';position:absolute;left:-10%;right:-10%;top:40%;height:16%;background:linear-gradient(transparent,#fff 45%,#000 55%,transparent);opacity:.9;mix-blend-mode:screen;animation:crtTear .4s steps(3) both}
+@keyframes crtZap{0%{opacity:0}10%{opacity:1}60%{opacity:.9}100%{opacity:0}}
+@keyframes crtTear{0%{transform:translateY(-170%) scaleY(.2)}40%{transform:translateY(130%) scaleY(.8) skewX(16deg)}70%{transform:translateY(-30%) scaleY(.4) skewX(-12deg)}100%{transform:translateY(0) scaleY(.15);opacity:0}}
+.crt-actions{display:none;align-items:center;gap:10px;padding:14px 2px 0;flex-wrap:wrap}
+body.crt .crt-actions{display:flex}
+.crt-tag{font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:3px;color:#9fe870;border:1px solid #2d4a22;background:#0d1409;border-radius:6px;padding:3px 8px}
+#crtVol{flex:1;min-width:120px;max-width:280px;accent-color:#9fe870;height:34px}
+.crt-actions .act{background:#101216;border-color:#2c2f36;color:#cdd5e0}
+@media (max-width:899px){body.crt .video-wrap{border-width:7px;border-radius:16px}.crt-actions{gap:8px}body.crt #watchView{padding-bottom:10px}}
+
+/* ---------- v2.1: phone remote dialog ---------- */
+.rm-status{font-size:13px;color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin:0 0 14px}
+.rm-status.ok{color:#9fe870;border-color:#2d4a22;background:#0d1409}
+.rm-status.warn{color:#ffd166;border-color:#5b4a14;background:#161204}
+.rm-status.err{color:#ff9c9c;border-color:#5a2a2a;background:#170b0b}
+.rm-pair{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px}
+.rm-qr{flex:0 0 190px;width:190px;height:190px;background:#fff;border-radius:14px;padding:9px;display:grid;place-items:center;color:#111}
+.rm-qr svg{width:100%;height:100%;display:block}
+.rm-qr-fallback{font-size:12px;text-align:center;color:#333}
+.rm-code-wrap{flex:1;min-width:210px;display:flex;flex-direction:column;gap:8px}
+.rm-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:30px;font-weight:700;letter-spacing:5px;color:#fff}
+.rm-hint{color:var(--muted);font-size:12.5px;line-height:1.45}
+.rm-url{font-size:11.5px;color:#8fb6ff;word-break:break-all}
+.rm-connected{background:#0d1409;border:1px solid #2d4a22;border-radius:12px;padding:12px 14px;margin-bottom:14px;display:flex;flex-direction:column;gap:10px}
+.rm-connected[hidden]{display:none}
+.rm-connected p{margin:0;font-size:13px;color:#cfe9c2}
+.rm-connected .btn{align-self:flex-start}
+@media (max-width:520px){.rm-qr{width:150px;height:150px;flex-basis:150px}.rm-code{font-size:24px;letter-spacing:4px}}
 </style>
 </head>
 <body>
@@ -363,7 +407,8 @@ a.nav-item{text-decoration:none}
     <div class="nav-sep"></div>
     <div class="nav-head">Library</div>
     <button class="nav-item" data-nav="settings"><span class="ni-ico">⚙️</span>Sources &amp; proxy</button>
-    <a class="nav-item" data-apk-dl href="Tuner-v2.0.0-debug.apk" download><span class="ni-ico">📱</span>Android app (APK)</a>
+    <a class="nav-item" data-apk-dl href="Tuner-v2.1.0.apk" download><span class="ni-ico">📱</span>Android app (APK)</a>
+    <button class="nav-item" id="drawerRemote"><span class="ni-ico">📲</span>Phone remote</button>
     <div class="drawer-foot" id="drawerFoot">Loading…</div>
   </aside>
   <div id="scrim"></div>
@@ -389,7 +434,7 @@ a.nav-item{text-decoration:none}
       <div class="home-empty" id="homeEmpty" hidden></div>
       <button class="btn ghost" id="moreBtn">Show more</button>
       <div id="gridSentinel" aria-hidden="true"></div>
-      <div class="home-foot" data-apk-dl><a class="mini-btn" href="Tuner-v2.0.0-debug.apk" download>📱 Get the Android app</a></div>
+      <div class="home-foot" data-apk-dl><a class="mini-btn" href="Tuner-v2.1.0.apk" download>📱 Get the Android app</a></div>
     </div>
   </main>
 
@@ -398,6 +443,8 @@ a.nav-item{text-decoration:none}
       <button class="btn ghost back-btn" id="backBtn">← Browse</button>
       <div class="video-wrap" id="videoWrap">
         <video id="video" controls playsinline></video>
+        <div class="crt-fx" aria-hidden="true"></div>
+        <div class="crt-zap" id="crtZap" aria-hidden="true"></div>
         <div class="hud"><span class="pill live" id="livePill" hidden><i></i>LIVE</span><span class="pill" id="proxyPill" hidden>proxy</span></div>
         <div class="swipe-hint">swipe ← → to change channel</div>
         <div class="overlay" id="bufferOv" aria-live="polite"><div class="spinner"></div><span class="sr-only">Buffering…</span></div>
@@ -413,6 +460,13 @@ a.nav-item{text-decoration:none}
           <div class="ov-sub">Pick a channel to start watching</div>
         </div>
         <div id="statsOv" hidden aria-label="Stream statistics"></div>
+      </div>
+      <div class="crt-actions" id="crtActions" hidden aria-label="CRT controls">
+        <span class="crt-tag">CRT</span>
+        <input type="range" id="crtVol" min="0" max="1" step="0.05" aria-label="Volume" />
+        <button class="act" id="crtMute" aria-label="Mute or unmute">🔊</button>
+        <button class="act" id="crtPower" title="Power on/off">⏻ Power</button>
+        <button class="act" id="crtExit" title="Turn CRT Mode off">📺 CRT off</button>
       </div>
       <div class="now">
         <div class="now-logo" id="nowLogo">📺</div>
@@ -432,10 +486,12 @@ a.nav-item{text-decoration:none}
         <button class="act" id="fsBtn" title="Fullscreen">⛶ Fullscreen</button>
         <button class="act" id="copyBtn" title="Copy share link">🔗 Share</button>
         <button class="act" id="statsBtn" title="Stream stats (S)">📊 Stats</button>
+        <button class="act" id="crtBtn" title="CRT Mode (C)">📺 CRT Mode</button>
+        <button class="act" id="remoteBtn" title="Control this TV from your phone">📱 Remote</button>
         <button class="act" id="helpAct" title="Keyboard shortcuts (?)">⌨ Keys</button>
       </div>
       <div class="desc" id="descBox"><div id="epgLine">Guide info appears here when an EPG is loaded (Setup).</div><button class="desc-url" id="descUrl" type="button" title="Copy the raw stream URL"></button></div>
-      <div class="kbd-hint">Shortcuts: <kbd>/</kbd> search · <kbd>↑</kbd><kbd>↓</kbd> browse · <kbd>Enter</kbd> play · <kbd>N</kbd>/<kbd>P</kbd> next/prev · <kbd>F</kbd> favorite · <kbd>G</kbd> guide · <kbd>S</kbd> stats · <kbd>Space</kbd> pause · <kbd>M</kbd> mute · <kbd>?</kbd> all keys</div>
+      <div class="kbd-hint">Shortcuts: <kbd>/</kbd> search · <kbd>↑</kbd><kbd>↓</kbd> browse · <kbd>Enter</kbd> play · <kbd>N</kbd>/<kbd>P</kbd> next/prev · <kbd>F</kbd> favorite · <kbd>G</kbd> guide · <kbd>S</kbd> stats · <kbd>C</kbd> CRT · <kbd>Space</kbd> pause · <kbd>M</kbd> mute · <kbd>?</kbd> all keys</div>
     </section>
     <section class="list-pane" aria-label="Up next">
       <div class="upnext-head"><span>Up next</span><small id="counts">Loading…</small></div>
@@ -535,7 +591,7 @@ a.nav-item{text-decoration:none}
     <div class="field" data-apk-dl>
       <label>Android app</label>
       <div class="row">
-        <a class="btn" href="Tuner-v2.0.0-debug.apk" download data-apk-label>⬇ Download APK</a>
+        <a class="btn" href="Tuner-v2.1.0.apk" download data-apk-label>⬇ Download APK</a>
       </div>
       <small style="color:var(--muted);font-size:12px">Same Tuner, installed — no browser needed. Allow "install from unknown sources" if asked.</small>
     </div>
@@ -575,6 +631,7 @@ a.nav-item{text-decoration:none}
       <kbd>F</kbd><span>Favorite current channel</span>
       <kbd>G</kbd><span>Open TV guide</span>
       <kbd>S</kbd><span>Stream statistics</span>
+      <kbd>C</kbd><span>CRT Mode on / off</span>
       <kbd>Space</kbd><span>Play / pause</span>
       <kbd>M</kbd><span>Mute</span>
       <kbd>Esc</kbd><span>Back / close</span>
@@ -583,13 +640,55 @@ a.nav-item{text-decoration:none}
   </div>
 </dialog>
 
+<dialog id="remoteDlg" aria-labelledby="rmTitle">
+  <div class="sheet">
+    <h2 id="rmTitle">📱 Phone remote <button class="icon-btn" id="rmClose" aria-label="Close remote panel">✕</button></h2>
+    <p class="rm-status" id="rmStatus">Remote off</p>
+    <div class="rm-pair">
+      <div class="rm-qr" id="rmQr" aria-label="Pairing QR code"></div>
+      <div class="rm-code-wrap">
+        <div class="rm-code" id="rmCode">--------</div>
+        <div class="rm-hint">Scan the QR with your phone camera, or open the link and type the code. The phone is only the remote — picture and sound stay on this screen.</div>
+        <div class="rm-url" id="rmUrl"></div>
+        <div class="row">
+          <button class="btn ghost" id="rmCopy" type="button">Copy link</button>
+          <button class="btn ghost" id="rmNew" type="button">New code</button>
+        </div>
+        <div class="rm-hint" id="rmTimer"></div>
+      </div>
+    </div>
+    <div class="rm-connected" id="rmConnected" hidden>
+      <p>Phone connected — it can change channels, volume, mute and power. Keep this tab open.</p>
+    </div>
+    <div class="field">
+      <label for="remoteUrl">Remote server (optional)</label>
+      <input id="remoteUrl" type="text" spellcheck="false" inputmode="url" placeholder="ws://192.168.1.5:8080/remote-ws" />
+      <small style="color:var(--muted);font-size:12px">Run <code>node server.js</code> on this computer (same Wi-Fi). Leave empty to auto-detect <code>ws://&lt;this-host&gt;:8080/remote-ws</code>.</small>
+    </div>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn ghost" id="rmStop" type="button">Stop remote</button>
+    </div>
+    <div class="rm-hint">The pairing code expires after 5 minutes and only one phone can connect. On HTTPS sites (e.g. GitHub Pages) set a <code>wss://</code> server — or run Tuner locally.</div>
+  </div>
+</dialog>
+
 <div id="toast" role="status"><span id="toastMsg"></span><button id="toastAct" type="button" hidden></button></div>
 
+<script src="qrcode.js"></script>
 <script>
 (function(){
 "use strict";
 
-var APP_VERSION="2.0.0";
+/* /?remote=1 → standalone phone remote page (optional &code= passes through). */
+try{
+  var _rq=new URLSearchParams(location.search);
+  if(_rq.get('remote')==='1'){
+    location.replace('remote.html'+( _rq.get('code')?'?code='+encodeURIComponent(_rq.get('code')):''));
+    return;
+  }
+}catch(e){}
+
+var APP_VERSION="2.1.0";
 var DEFAULT_URL="https://iptv-org.github.io/iptv/countries/in.m3u";
 var FALLBACK_COUNTRIES=[["us","USA","🇺🇸"],["uk","UK","🇬🇧"],["ca","Canada","🇨🇦"],["au","Australia","🇦🇺"],["pk","Pakistan","🇵🇰"],["bd","Bangladesh","🇧🇩"],["ae","UAE","🇦🇪"],["sa","Saudi","🇸🇦"],["de","Germany","🇩🇪"],["fr","France","🇫🇷"],["it","Italy","🇮🇹"],["es","Spain","🇪🇸"],["br","Brazil","🇧🇷"],["mx","Mexico","🇲🇽"],["jp","Japan","🇯🇵"],["kr","Korea","🇰🇷"],["cn","China","🇨🇳"],["ru","Russia","🇷🇺"],["za","South Africa","🇿🇦"],["np","Nepal","🇳🇵"]];
 var FALLBACK_LANGS=[["hin","Hindi"],["eng","English"],["tam","Tamil"],["tel","Telugu"],["mal","Malayalam"],["kan","Kannada"],["ben","Bengali"],["mar","Marathi"],["pan","Punjabi"],["guj","Gujarati"],["ori","Odia"],["urd","Urdu"],["asm","Assamese"],["spa","Spanish"],["fra","French"],["deu","German"],["ita","Italian"],["por","Portuguese"],["rus","Russian"],["ara","Arabic"],["tur","Turkish"],["fas","Persian"],["jpn","Japanese"],["kor","Korean"],["zho","Chinese"],["ind","Indonesian"],["msa","Malay"],["tha","Thai"],["vie","Vietnamese"],["nld","Dutch"],["pol","Polish"],["ukr","Ukrainian"],["heb","Hebrew"]];
@@ -1529,8 +1628,206 @@ function setMeta(ch,viaProxy){
   pp.textContent=viaProxy?('via '+proxyLabel(usedPrefix||getProxyPrefix())):'';
   lastWin='';
 }
+/* ============================================================
+   CRT Mode (v2.1)
+   - body.crt + .crt-fx (scanlines/vignette/grain) + .crt-zap
+   - hides native seek bar and most actions; keeps a minimal bar
+   - persisted in localStorage; zap respects prefers-reduced-motion
+   ============================================================ */
+var crtOn=false,crtZapTimer=null;
+function crtReduced(){try{return matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){return false;}}
+function syncCrtControls(){
+  var v=$('crtVol');if(v)v.value=video.muted?0:video.volume;
+  var m=$('crtMute');if(m)m.textContent=video.muted?'🔇':'🔊';
+}
+function applyCrt(on,opts){
+  crtOn=!!on;
+  document.body.classList.toggle('crt',crtOn);
+  try{video.controls=!crtOn;}catch(e){} // hides the native seek/progress bar in CRT mode
+  var b=$('crtBtn');if(b)b.classList.toggle('on',crtOn);
+  var bar=$('crtActions');if(bar)bar.hidden=!crtOn;
+  if(!opts||!opts.silent){
+    sset('tuner_crt',crtOn?'1':'0');
+    toast(crtOn?'CRT Mode on — scanlines engaged':'CRT Mode off');
+    announce(crtOn?'CRT Mode on':'CRT Mode off');
+  }
+  syncCrtControls();
+}
+function crtZap(){
+  if(!crtOn||crtReduced())return; // reduced motion: static scanlines, no zap
+  var z=$('crtZap');if(!z)return;
+  z.classList.remove('on');
+  void z.offsetWidth; // force reflow so the animation restarts
+  z.classList.add('on');
+  clearTimeout(crtZapTimer);
+  crtZapTimer=setTimeout(function(){z.classList.remove('on');},420);
+}
+function powerToggle(){
+  if(view==='watch'||view==='guide'){
+    try{video.pause();}catch(e){}
+    showView('home');
+    toast('TV off');
+  }else if(currentChannel){
+    showView('watch');
+    if(currentUrl!==currentChannel.url)playChannel(currentChannel);
+    else{try{video.play().catch(function(){});}catch(e){}}
+    toast('TV on');
+  }else toast('Pick a channel first');
+  pushRemoteState();
+}
+
+/* ============================================================
+   Phone-as-remote (TV side, v1)
+   Pairing sessions live in server.js (WebSocket /remote-ws).
+   The TV is authoritative: it executes commands and reports state.
+   ============================================================ */
+var remoteSock=null,remoteSession=null,remoteExpiry=0,remoteTick=null,remotePhoneOn=false;
+var REMOTE_SERVER_KEY='tuner_remote_server';
+function remoteConnected(){return !!remoteSock&&remoteSock.readyState===1;}
+function remoteServerUrl(){
+  var saved='';try{saved=(sget(REMOTE_SERVER_KEY)||'').trim();}catch(e){}
+  if(saved)return saved;
+  // Inside the Android app the page origin is appassets.androidplatform.net —
+  // there is nothing to auto-detect, the user must point at their computer.
+  if(/appassets\.androidplatform\.net$/i.test(location.hostname))return '';
+  var proto=(location.protocol==='https:')?'wss:':'ws:';
+  return proto+'//'+(location.hostname||'localhost')+':8080/remote-ws';
+}
+function rmStatus(txt,cls){
+  var el=$('rmStatus');if(!el)return;
+  el.textContent=txt;el.className='rm-status'+(cls?' '+cls:'');
+}
+function pickRemoteUrl(urls){
+  urls=urls||[];
+  for(var i=0;i<urls.length;i++)if(urls[i]&&urls[i].indexOf('127.0.0.1')<0)return urls[i];
+  return urls[0]||'';
+}
+function renderPairing(){
+  if(!remoteSession)return;
+  var url=pickRemoteUrl(remoteSession.urls||[]);
+  var code=remoteSession.code||'';
+  var codeEl=$('rmCode');if(codeEl)codeEl.textContent=code.slice(0,4)+' '+code.slice(4);
+  var urlEl=$('rmUrl');if(urlEl)urlEl.textContent=url;
+  var qr=$('rmQr');
+  if(qr){
+    try{
+      var q=qrcode(0,'M');q.addData(url);q.make();
+      qr.innerHTML=q.createSvgTag({cellSize:4,margin:2,alt:'Pair with Tuner remote'});
+      var svg=qr.querySelector('svg');if(svg)svg.setAttribute('style','width:100%;height:100%;display:block');
+    }catch(e){qr.innerHTML='<span class="rm-qr-fallback">QR unavailable — type the code</span>';}
+  }
+  if(remotePhoneOn){var t=$('rmTimer');if(t)t.textContent='Connected — code no longer needed';}
+  else startRemoteCountdown();
+}
+function startRemoteCountdown(){
+  if(remoteTick){clearInterval(remoteTick);remoteTick=null;}
+  var timer=$('rmTimer');if(!timer)return;
+  function tick(){
+    if(!remoteSession){timer.textContent='';return;}
+    var left=Math.max(0,remoteExpiry-Date.now());
+    if(!left){
+      timer.textContent='Code expired — press “New code”';
+      if(remoteTick){clearInterval(remoteTick);remoteTick=null;}
+      return;
+    }
+    var s=Math.ceil(left/1000);
+    timer.textContent='Code valid for '+Math.floor(s/60)+':'+('0'+(s%60)).slice(-2);
+  }
+  tick();
+  remoteTick=setInterval(tick,1000);
+}
+function updatePhoneUI(on){
+  remotePhoneOn=!!on;
+  var el=$('rmConnected');if(el)el.hidden=!on;
+}
+function disconnectRemote(){
+  if(remoteSock){try{remoteSock.onclose=null;remoteSock.close();}catch(e){}remoteSock=null;}
+  if(remoteTick){clearInterval(remoteTick);remoteTick=null;}
+  remoteSession=null;remoteExpiry=0;
+  updatePhoneUI(false);
+  rmStatus('Remote off','');
+  var q=$('rmQr');if(q)q.innerHTML='';
+  var c=$('rmCode');if(c)c.textContent='--------';
+  var u=$('rmUrl');if(u)u.textContent='';
+  var t=$('rmTimer');if(t)t.textContent='';
+}
+function connectRemote(){
+  disconnectRemote();
+  var url=remoteServerUrl();
+  if(!url){
+    rmStatus('Enter your computer’s remote URL below — run node server.js first','err');
+    var inp=$('remoteUrl');if(inp)try{inp.focus();}catch(e){}
+    return;
+  }
+  rmStatus('Connecting to '+url+' …','warn');
+  var target=url;
+  try{var x=new URL(url);x.searchParams.set('role','tv');target=x.href;}catch(e){}
+  try{remoteSock=new WebSocket(target);}catch(e){rmStatus('Invalid remote server URL','err');return;}
+  remoteSock.onopen=function(){rmStatus('Connected to pairing server — waiting for phone','warn');};
+  remoteSock.onmessage=function(ev){
+    var m;try{m=JSON.parse(ev.data);}catch(e){return;}
+    if(m.type==='session'){
+      remoteSession=m;remoteExpiry=m.expiresAt||(Date.now()+300000);
+      renderPairing();
+      if(!remotePhoneOn)rmStatus('Waiting for your phone…','warn');
+    }else if(m.type==='phone'){
+      if(m.connected){
+        rmStatus('Phone connected ✓','ok');
+        updatePhoneUI(true);
+        if(remoteTick){clearInterval(remoteTick);remoteTick=null;}
+        var t=$('rmTimer');if(t)t.textContent='Connected — code no longer needed';
+        toast('Phone remote connected');
+      }else{
+        rmStatus('Phone disconnected — scan again to reconnect','warn');
+        updatePhoneUI(false);
+        startRemoteCountdown();
+      }
+    }else if(m.type==='cmd'){
+      handleRemoteCommand(m.action);
+    }else if(m.type==='error'){
+      rmStatus(m.message||'Remote error','err');
+    }
+  };
+  remoteSock.onclose=function(){
+    remoteSock=null;
+    if(remoteSession)rmStatus('Pairing server offline — is node server.js running?','err');
+  };
+}
+function handleRemoteCommand(action){
+  if(action==='chup')step(1);
+  else if(action==='chdown')step(-1);
+  else if(action==='volup')video.volume=Math.min(1,Math.round((video.volume+0.1)*100)/100);
+  else if(action==='voldown')video.volume=Math.max(0,Math.round((video.volume-0.1)*100)/100);
+  else if(action==='mute')video.muted=!video.muted;
+  else if(action==='power')powerToggle();
+  else return;
+  pushRemoteState();
+}
+function remoteStateSnapshot(){
+  return {
+    name:currentChannel?currentChannel.name:'',
+    volume:Math.round(video.volume*100),
+    muted:!!video.muted,
+    playing:!!currentUrl&&!video.paused&&!video.ended,
+    view:view
+  };
+}
+function pushRemoteState(){
+  if(!remoteConnected())return;
+  try{remoteSock.send(JSON.stringify({type:'state',state:remoteStateSnapshot()}));}catch(e){}
+}
+function openRemote(){
+  var d=$('remoteDlg');if(!d)return;
+  try{if(d.showModal)d.showModal();else d.setAttribute('open','');}catch(e){try{d.setAttribute('open','');}catch(_){}}
+  var inp=$('remoteUrl');if(inp){try{inp.value=sget(REMOTE_SERVER_KEY)||'';}catch(e){}}
+  if(!remoteSock)connectRemote();
+  else if(remoteSession)renderPairing();
+}
+function closeRemoteDlg(){var d=$('remoteDlg');if(d){try{d.close();}catch(e){try{d.removeAttribute('open');}catch(_){}}}}
+
 function playChannel(ch,forceProxy){
   if(!ch)return;
+  if(crtOn&&currentUrl!==ch.url)crtZap(); // analog zap on every real channel change (incl. first play)
   var attempt=++currentAttempt;
   clearTimeout(autoProxyTimer);
   destroyHls();revokeNative();stopWatchdog();hideError();
@@ -1558,6 +1855,7 @@ function playChannel(ch,forceProxy){
   lastWin='';renderList();renderRail();
   syncHash();
   startStream(playUrl,ch,useProxy,attempt);
+  pushRemoteState();
 }
 function playIndex(i,toWatch){
   if(!filtered.length)return;
@@ -1597,10 +1895,12 @@ video.addEventListener('error',function(){
 video.addEventListener('play',function(){
   wlWanted=true;wlAcquire();
   if('mediaSession' in navigator){try{navigator.mediaSession.playbackState='playing';}catch(e){}}
+  pushRemoteState();
 });
 video.addEventListener('pause',function(){
   wlWanted=false;wlRelease();
   if('mediaSession' in navigator){try{navigator.mediaSession.playbackState='paused';}catch(e){}}
+  pushRemoteState();
 });
 $('nextBtn').onclick=$('nextErrBtn').onclick=function(){step(1);};
 $('prevBtn').onclick=function(){step(-1);};
@@ -1939,6 +2239,7 @@ function showView(v){
     try{guideScroll.scrollLeft=Math.max(0,((now-start)/60000)*guidePPM()-160);}catch(e){}
   }
   syncHash();
+  pushRemoteState();
 }
 function setTab(t,goHome){
   tab=t;group='';
@@ -2008,6 +2309,7 @@ welcome.addEventListener('close',function(){sset('tuner_seen','1');});
 welcome.addEventListener('click',function(e){if(e.target===welcome)closeWelcome();});
 settings.addEventListener('click',function(e){if(e.target===settings)closeSettings();});
 helpDlg.addEventListener('click',function(e){if(e.target===helpDlg)closeHelp();});
+$('remoteDlg').addEventListener('click',function(e){if(e.target===this)closeRemoteDlg();});
 
 function fetchPlaylistText(url){
   return new Promise(function(resolve,reject){
@@ -2328,6 +2630,7 @@ document.addEventListener('keydown',function(e){
   else if(k==='m'||k==='M')video.muted=!video.muted;
   else if(k==='g'||k==='G')openGuide();
   else if(k==='s'||k==='S')toggleStats();
+  else if(k==='c'||k==='C')applyCrt(!crtOn);
   else if(k==='?'||(k==='/'&&e.shiftKey))openHelp();
   else if(k===' '&&tag!=='BUTTON'){e.preventDefault();video.paused?video.play().catch(function(){}):video.pause();}
 });
@@ -2358,6 +2661,23 @@ try{
     document.querySelectorAll('[data-apk-label]').forEach(function(el){el.textContent='⬇ Download APK (v'+APP_VERSION+')';});
   }
 }catch(e){}
+/* CRT Mode + phone remote wiring */
+applyCrt(sget('tuner_crt')==='1',{silent:true});
+$('crtBtn').onclick=function(){applyCrt(!crtOn);};
+$('crtExit').onclick=function(){applyCrt(false);};
+$('crtMute').onclick=function(){video.muted=!video.muted;};
+$('crtVol').oninput=function(){video.volume=Math.max(0,Math.min(1,parseFloat(this.value)||0));};
+$('crtPower').onclick=powerToggle;
+$('remoteBtn').onclick=openRemote;
+$('drawerRemote').onclick=function(){closeDrawer(true);openRemote();};
+$('rmClose').onclick=closeRemoteDlg;
+$('rmCopy').onclick=function(){var u=$('rmUrl')?$('rmUrl').textContent:'';if(u)copyText(u,'Join link copied');else toast('No pairing link yet');};
+$('rmNew').onclick=function(){
+  if(remoteConnected()){try{remoteSock.send(JSON.stringify({type:'new-code'}));toast('New pairing code requested');}catch(e){}}
+  else connectRemote();
+};
+$('rmStop').onclick=function(){disconnectRemote();toast('Remote stopped');};
+$('remoteUrl').onchange=function(){sset(REMOTE_SERVER_KEY,this.value.trim());connectRemote();};
 syncCountrySelect(urlInput.value);
 showView('home');
 try{
@@ -2377,7 +2697,7 @@ try{
   if(!isNaN(_vv))video.volume=Math.min(1,Math.max(0,_vv));
   if(sget('tuner_mute')==='1')video.muted=true;
 }catch(e){}
-video.addEventListener('volumechange',function(){try{sset('tuner_vol',String(video.volume));sset('tuner_mute',video.muted?'1':'0');}catch(e){}});
+video.addEventListener('volumechange',function(){try{sset('tuner_vol',String(video.volume));sset('tuner_mute',video.muted?'1':'0');}catch(e){}syncCrtControls();pushRemoteState();});
 try{console.log('[tuner] v'+APP_VERSION);}catch(e){}
 if(!sget('tuner_seen')){try{openWelcome();}catch(e){}}
 if(('serviceWorker' in navigator)&&/^https?:$/.test(location.protocol)){

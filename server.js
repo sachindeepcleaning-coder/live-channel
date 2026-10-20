@@ -35,6 +35,10 @@
 const http = require('http');
 const dns = require('dns');
 const net = require('net');
+const crypto = require('crypto');
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
 const { Readable } = require('stream');
 
 const PORT = Number.parseInt(process.env.PORT || '8080', 10) || 8080;
@@ -44,6 +48,8 @@ const ALLOWED_ORIGINS = ['https://sachindeepcleaning-coder.github.io'];
 const ALLOW_LOCAL = process.env.ALLOW_LOCAL === '1';
 const ALLOW_OPEN = process.env.ALLOW_OPEN === '1';
 const SHARED_TOKEN = process.env.SHARED_TOKEN || '';
+const REMOTE_TTL_MS = Math.max(1000, Number.parseInt(process.env.REMOTE_TTL_MS || '300000', 10) || 300000);
+const REMOTE_PAGE = path.join(__dirname, 'remote.html');
 const MAX_REDIRECTS = 5;
 const FETCH_TIMEOUT_MS = 30000;
 const MAX_MANIFEST_BYTES = 5 * 1024 * 1024;
@@ -225,6 +231,231 @@ async function readCapped(body, cap) {
   return Buffer.concat(chunks);
 }
 
+/* ==========================================================================
+ * Phone-as-remote (v1) — minimal WebSocket pairing, no external deps.
+ *
+ *   Desktop  ws://host:8080/remote-ws?role=tv      → creates a session
+ *   Phone    ws://host:8080/remote-ws?role=phone&code=XXXXXXXX
+ *
+ * Messages: {type:'session'|'phone'|'cmd'|'state'|'new-code'|'error'}
+ * Security model: trusted LAN. A random 8-char code gates the phone join,
+ * the code expires after REMOTE_TTL_MS (5 min default), and only one phone
+ * may be attached per TV. Sessions are in memory only.
+ * ========================================================================== */
+const WS_MAGIC = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
+const REMOTE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I lookalikes
+const sessionsByCode = new Map(); // code -> { code, tv, phone, expiresAt, ttl }
+const wsClients = new Map(); // socket -> client ctx
+
+// Prefer Wi-Fi/Ethernet and private ranges; docker/vpn interfaces score low.
+function lanAddresses() {
+  const found = [];
+  for (const [name, nets] of Object.entries(os.networkInterfaces())) {
+    for (const n of nets || []) {
+      if (!n || n.family !== 'IPv4' || n.internal || /^169\.254\./.test(n.address)) continue;
+      let score = 0;
+      if (/^(wl|wlan|wlp|en|eth)/i.test(name)) score += 3;
+      if (/^192\.168\./.test(n.address)) score += 2;
+      else if (/^10\./.test(n.address)) score += 1;
+      found.push({ address: n.address, score });
+    }
+  }
+  found.sort((a, b) => b.score - a.score);
+  return [...new Set(found.map((f) => f.address))];
+}
+
+function serveRemote(res) {
+  fs.readFile(REMOTE_PAGE, (err, buf) => {
+    if (err) {
+      res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('remote.html not found next to server.js');
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.end(buf);
+  });
+}
+
+function serveLanIp(res) {
+  res.writeHead(200, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store',
+    'Access-Control-Allow-Origin': '*',
+  });
+  res.end(JSON.stringify({ port: PORT, ips: lanAddresses() }));
+}
+
+// ---- tiny RFC 6455 helpers (text frames + ping/pong/close only) ----
+function wsFrame(opcode, payload) {
+  const data = Buffer.isBuffer(payload) ? payload : Buffer.from(String(payload));
+  const len = data.length;
+  let head;
+  if (len < 126) {
+    head = Buffer.from([0x80 | opcode, len]);
+  } else if (len < 65536) {
+    head = Buffer.alloc(4);
+    head[0] = 0x80 | opcode;
+    head[1] = 126;
+    head.writeUInt16BE(len, 2);
+  } else {
+    head = Buffer.alloc(10);
+    head[0] = 0x80 | opcode;
+    head[1] = 127;
+    head.writeBigUInt64BE(BigInt(len), 2);
+  }
+  return Buffer.concat([head, data]);
+}
+
+function wsSend(client, obj) {
+  if (!client || !client.alive) return;
+  try {
+    client.socket.write(wsFrame(0x1, typeof obj === 'string' ? obj : JSON.stringify(obj)));
+  } catch {
+    /* socket gone */
+  }
+}
+
+function wsEnd(client, code, reason) {
+  if (!client) return;
+  try {
+    const text = String(reason || '');
+    const body = Buffer.alloc(2 + Buffer.byteLength(text));
+    body.writeUInt16BE(code || 1000, 0);
+    body.write(text, 2);
+    client.socket.write(wsFrame(0x8, body));
+  } catch {
+    /* ignore */
+  }
+  setTimeout(() => {
+    try {
+      client.socket.end();
+    } catch {
+      /* ignore */
+    }
+  }, 60);
+}
+
+function makeCode() {
+  for (;;) {
+    let code = '';
+    for (let i = 0; i < 8; i++) code += REMOTE_ALPHABET[crypto.randomInt(REMOTE_ALPHABET.length)];
+    if (!sessionsByCode.has(code)) return code;
+  }
+}
+
+function sessionUrls(code) {
+  const p = '/remote?code=' + code;
+  const urls = lanAddresses().map((ip) => 'http://' + ip + ':' + PORT + p);
+  urls.push('http://127.0.0.1:' + PORT + p);
+  return urls;
+}
+
+function sendSession(client) {
+  const s = client && client.session;
+  if (!s) return;
+  wsSend(client, {
+    type: 'session',
+    code: s.code,
+    ttl: s.ttl,
+    expiresAt: s.expiresAt,
+    joinPath: '/remote?code=' + s.code,
+    urls: sessionUrls(s.code),
+  });
+}
+
+function failClient(client, message) {
+  wsSend(client, { type: 'error', message });
+  wsEnd(client, 1008, message);
+}
+
+function createTvSession(client) {
+  const code = makeCode();
+  client.session = {
+    code,
+    tv: client,
+    phone: null,
+    ttl: REMOTE_TTL_MS,
+    expiresAt: Date.now() + REMOTE_TTL_MS,
+  };
+  sessionsByCode.set(code, client.session);
+  sendSession(client);
+  console.log('[tuner-remote] session ' + code + ' created');
+}
+
+function joinPhoneSession(client, rawCode) {
+  const code = String(rawCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const session = sessionsByCode.get(code);
+  if (!session) return failClient(client, 'Code not found. Check the 8 characters on the TV.');
+  if (!session.tv || !session.tv.alive) {
+    sessionsByCode.delete(code);
+    return failClient(client, 'The TV is offline. Reload the TV and try a new code.');
+  }
+  if (Date.now() > session.expiresAt) return failClient(client, 'This code expired. Ask the TV for a new one.');
+  if (session.phone && session.phone.alive) return failClient(client, 'Another phone is already connected to this TV.');
+  session.phone = client;
+  client.session = session;
+  wsSend(client, { type: 'joined', code });
+  wsSend(session.tv, { type: 'phone', connected: true });
+  console.log('[tuner-remote] phone joined ' + code);
+}
+
+function cleanupClient(client) {
+  if (!client.alive) return;
+  client.alive = false;
+  const s = client.session;
+  if (!s) return;
+  if (client.role === 'tv') {
+    sessionsByCode.delete(s.code);
+    if (s.phone && s.phone.alive) {
+      wsSend(s.phone, { type: 'error', message: 'The TV disconnected.' });
+      wsEnd(s.phone, 1001, 'TV disconnected');
+    }
+    console.log('[tuner-remote] session ' + s.code + ' closed');
+  } else {
+    if (s.phone === client) s.phone = null;
+    if (s.tv && s.tv.alive) wsSend(s.tv, { type: 'phone', connected: false });
+  }
+}
+
+function handleRemoteMessage(client, text) {
+  if (text.length > 4096) return;
+  const now = Date.now();
+  client.hits = (client.hits || []).filter((t) => now - t < 5000);
+  if (client.hits.length > 60) return failClient(client, 'Too many messages');
+  client.hits.push(now);
+
+  let msg;
+  try {
+    msg = JSON.parse(text);
+  } catch {
+    return;
+  }
+  if (!msg || typeof msg.type !== 'string') return;
+
+  if (msg.type === 'cmd' && client.role === 'phone' && client.session) {
+    // Phone only ever sends commands; the TV decides what to do.
+    const allowed = ['chup', 'chdown', 'volup', 'voldown', 'mute', 'power'];
+    if (!allowed.includes(msg.action)) return;
+    const tv = client.session.tv;
+    if (tv && tv.alive) wsSend(tv, { type: 'cmd', action: msg.action });
+  } else if (msg.type === 'state' && client.role === 'tv' && client.session) {
+    // TV is authoritative — mirror its state to the phone.
+    const phone = client.session.phone;
+    if (phone && phone.alive) wsSend(phone, { type: 'state', state: msg.state || {} });
+  } else if (msg.type === 'new-code' && client.role === 'tv' && client.session) {
+    const s = client.session;
+    sessionsByCode.delete(s.code);
+    s.code = makeCode();
+    s.expiresAt = Date.now() + s.ttl;
+    sessionsByCode.set(s.code, s);
+    sendSession(client);
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   res.on('error', () => {});
   const origin = req.headers.origin || '';
@@ -241,6 +472,17 @@ const server = http.createServer(async (req, res) => {
   }
 
   const reqUrl = new URL(req.url, 'http://local');
+
+  // --- Phone remote endpoints (not part of the CORS proxy) ---
+  if (reqUrl.pathname === '/remote' || reqUrl.pathname === '/remote.html') {
+    serveRemote(res);
+    return;
+  }
+  if (reqUrl.pathname === '/api/lan-ip') {
+    serveLanIp(res);
+    return;
+  }
+
   const target = reqUrl.searchParams.get('url');
   const token = req.headers['x-proxy-token'] || reqUrl.searchParams.get('token') || '';
   const referer = req.headers.referer || '';
@@ -442,6 +684,135 @@ const server = http.createServer(async (req, res) => {
     req.removeListener('close', clientGone);
   }
 });
+
+server.on('upgrade', (req, socket) => {
+  let u;
+  try {
+    u = new URL(req.url, 'http://local');
+  } catch {
+    socket.destroy();
+    return;
+  }
+  const key = req.headers['sec-websocket-key'];
+  if (u.pathname !== '/remote-ws' || !key || String(req.headers.upgrade || '').toLowerCase() !== 'websocket') {
+    socket.destroy();
+    return;
+  }
+  const accept = crypto.createHash('sha1').update(key + WS_MAGIC).digest('base64');
+  socket.write(
+    'HTTP/1.1 101 Switching Protocols\r\n' +
+      'Upgrade: websocket\r\n' +
+      'Connection: Upgrade\r\n' +
+      'Sec-WebSocket-Accept: ' + accept + '\r\n' +
+      '\r\n'
+  );
+  socket.setNoDelay(true);
+
+  const client = {
+    socket,
+    role: u.searchParams.get('role') === 'phone' ? 'phone' : 'tv',
+    alive: true,
+    session: null,
+    lastSeen: Date.now(),
+    buf: Buffer.alloc(0),
+    hits: [],
+  };
+  wsClients.set(socket, client);
+
+  socket.on('data', (chunk) => {
+    client.buf = Buffer.concat([client.buf, chunk]);
+    for (;;) {
+      const b = client.buf;
+      if (b.length < 2) return;
+      const fin = (b[0] & 0x80) !== 0;
+      const opcode = b[0] & 0x0f;
+      const masked = (b[1] & 0x80) !== 0;
+      let len = b[1] & 0x7f;
+      let off = 2;
+      if (len === 126) {
+        if (b.length < 4) return;
+        len = b.readUInt16BE(2);
+        off = 4;
+      } else if (len === 127) {
+        if (b.length < 10) return;
+        len = Number(b.readBigUInt64BE(2));
+        off = 10;
+      }
+      if (len > 65536) {
+        wsEnd(client, 1009, 'Message too big');
+        return;
+      }
+      const need = off + (masked ? 4 : 0) + len;
+      if (b.length < need) return;
+      let payload = b.subarray(off + (masked ? 4 : 0), need);
+      if (masked) {
+        const mask = b.subarray(off, off + 4);
+        payload = Buffer.from(payload.map((v, i) => v ^ mask[i & 3]));
+      }
+      client.buf = b.subarray(need);
+      if (opcode === 0x8) {
+        cleanupClient(client);
+        wsClients.delete(socket);
+        try {
+          socket.end();
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      if (opcode === 0x9) {
+        try {
+          socket.write(wsFrame(0xa, payload));
+        } catch {
+          /* ignore */
+        }
+        continue;
+      }
+      if (opcode === 0xa) {
+        client.lastSeen = Date.now();
+        continue;
+      }
+      if (opcode === 0x1 && fin) {
+        client.lastSeen = Date.now();
+        handleRemoteMessage(client, payload.toString('utf8'));
+      }
+    }
+  });
+
+  const onGone = () => {
+    cleanupClient(client);
+    wsClients.delete(socket);
+  };
+  socket.on('close', onGone);
+  socket.on('error', onGone);
+
+  if (client.role === 'tv') createTvSession(client);
+  else joinPhoneSession(client, u.searchParams.get('code'));
+});
+
+// Drop dead sockets; expired sessions stay until the TV disconnects so a
+// connected phone keeps working past the join-code TTL.
+setInterval(() => {
+  const now = Date.now();
+  for (const client of wsClients.values()) {
+    if (!client.alive) continue;
+    if (now - client.lastSeen > 70000) {
+      cleanupClient(client);
+      wsClients.delete(client.socket);
+      try {
+        client.socket.destroy();
+      } catch {
+        /* ignore */
+      }
+      continue;
+    }
+    try {
+      client.socket.write(wsFrame(0x9, Buffer.alloc(0)));
+    } catch {
+      /* ignore */
+    }
+  }
+}, 25000).unref();
 
 server.on('clientError', (err, socket) => {
   try {
