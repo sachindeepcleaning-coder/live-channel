@@ -62,7 +62,7 @@ Notes:
 
 ## Android APK
 
-The site links to `Tuner-v2.1.0.apk` (built from `android/`, release-signed with
+The site links to `Tuner-v2.2.1.apk` (built from `android/`, release-signed with
 v1+v2 schemes, minSdk 21). If installation fails:
 
 1. Allow **Install unknown apps** for the browser/file manager you downloaded with.
