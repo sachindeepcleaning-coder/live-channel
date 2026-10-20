@@ -406,7 +406,7 @@ body.crt #remoteDlg input{background:#0b1108;border-color:#2e4527;color:#d8ffc2}
 .rm-pair{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px}
 .rm-qr{flex:0 0 190px;width:190px;height:190px;background:#fff;border-radius:14px;padding:9px;display:grid;place-items:center;color:#111}
 .rm-qr svg{width:100%;height:100%;display:block}
-.rm-qr-fallback{font-size:12px;text-align:center;color:#333}
+.rm-qr-fallback{font-size:11.5px;line-height:1.5;text-align:center;color:#444;padding:0 12px}
 .rm-code-wrap{flex:1;min-width:210px;display:flex;flex-direction:column;gap:8px}
 .rm-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:30px;font-weight:700;letter-spacing:5px;color:#fff}
 .rm-hint{color:var(--muted);font-size:12.5px;line-height:1.45}
@@ -451,7 +451,7 @@ body.crt #remoteDlg input{background:#0b1108;border-color:#2e4527;color:#d8ffc2}
     <div class="nav-sep"></div>
     <div class="nav-head">Library</div>
     <button class="nav-item" data-nav="settings"><span class="ni-ico">⚙️</span>Sources &amp; proxy</button>
-    <a class="nav-item" data-apk-dl href="Tuner-v2.2.0.apk" download><span class="ni-ico">📱</span>Android app (APK)</a>
+    <a class="nav-item" data-apk-dl href="Tuner-v2.2.1.apk" download><span class="ni-ico">📱</span>Android app (APK)</a>
     <button class="nav-item" id="drawerRemote"><span class="ni-ico">📲</span>Phone remote</button>
     <div class="drawer-foot" id="drawerFoot">Loading…</div>
   </aside>
@@ -478,7 +478,7 @@ body.crt #remoteDlg input{background:#0b1108;border-color:#2e4527;color:#d8ffc2}
       <div class="home-empty" id="homeEmpty" hidden></div>
       <button class="btn ghost" id="moreBtn">Show more</button>
       <div id="gridSentinel" aria-hidden="true"></div>
-      <div class="home-foot" data-apk-dl><a class="mini-btn" href="Tuner-v2.2.0.apk" download>📱 Get the Android app</a></div>
+      <div class="home-foot" data-apk-dl><a class="mini-btn" href="Tuner-v2.2.1.apk" download>📱 Get the Android app</a></div>
     </div>
   </main>
 
@@ -684,7 +684,7 @@ body.crt #remoteDlg input{background:#0b1108;border-color:#2e4527;color:#d8ffc2}
     <div class="field" data-apk-dl>
       <label>Android app</label>
       <div class="row">
-        <a class="btn" href="Tuner-v2.2.0.apk" download data-apk-label>⬇ Download APK</a>
+        <a class="btn" href="Tuner-v2.2.1.apk" download data-apk-label>⬇ Download APK</a>
       </div>
       <small style="color:var(--muted);font-size:12px">Same Tuner, installed — no browser needed. Allow "install from unknown sources" if asked.</small>
     </div>
@@ -739,7 +739,7 @@ body.crt #remoteDlg input{background:#0b1108;border-color:#2e4527;color:#d8ffc2}
     <h2 id="rmTitle">📱 Phone remote <button class="icon-btn" id="rmClose" aria-label="Close remote panel">✕</button></h2>
     <p class="rm-status" id="rmStatus">Remote off</p>
     <div class="rm-pair">
-      <div class="rm-qr" id="rmQr" aria-label="Pairing QR code"></div>
+      <div class="rm-qr" id="rmQr" aria-label="Pairing QR code"><span class="rm-qr-fallback">The pairing QR appears here once the TV reaches a pairing server.</span></div>
       <div class="rm-code-wrap">
         <div class="rm-code" id="rmCode">--------</div>
         <div class="rm-hint">Scan the QR with your phone camera, or open the link and type the code. The phone is only the remote — picture and sound stay on this screen.</div>
@@ -782,7 +782,7 @@ try{
   }
 }catch(e){}
 
-var APP_VERSION="2.2.0";
+var APP_VERSION="2.2.1";
 var DEFAULT_URL="https://iptv-org.github.io/iptv/countries/in.m3u";
 var FALLBACK_COUNTRIES=[["us","USA","🇺🇸"],["uk","UK","🇬🇧"],["ca","Canada","🇨🇦"],["au","Australia","🇦🇺"],["pk","Pakistan","🇵🇰"],["bd","Bangladesh","🇧🇩"],["ae","UAE","🇦🇪"],["sa","Saudi","🇸🇦"],["de","Germany","🇩🇪"],["fr","France","🇫🇷"],["it","Italy","🇮🇹"],["es","Spain","🇪🇸"],["br","Brazil","🇧🇷"],["mx","Mexico","🇲🇽"],["jp","Japan","🇯🇵"],["kr","Korea","🇰🇷"],["cn","China","🇨🇳"],["ru","Russia","🇷🇺"],["za","South Africa","🇿🇦"],["np","Nepal","🇳🇵"]];
 var FALLBACK_LANGS=[["hin","Hindi"],["eng","English"],["tam","Tamil"],["tel","Telugu"],["mal","Malayalam"],["kan","Kannada"],["ben","Bengali"],["mar","Marathi"],["pan","Punjabi"],["guj","Gujarati"],["ori","Odia"],["urd","Urdu"],["asm","Assamese"],["spa","Spanish"],["fra","French"],["deu","German"],["ita","Italian"],["por","Portuguese"],["rus","Russian"],["ara","Arabic"],["tur","Turkish"],["fas","Persian"],["jpn","Japanese"],["kor","Korean"],["zho","Chinese"],["ind","Indonesian"],["msa","Malay"],["tha","Thai"],["vie","Vietnamese"],["nld","Dutch"],["pol","Polish"],["ukr","Ukrainian"],["heb","Hebrew"]];
@@ -1862,6 +1862,10 @@ function rmStatus(txt,cls){
   var el=$('rmStatus');if(!el)return;
   el.textContent=txt;el.className='rm-status'+(cls?' '+cls:'');
 }
+function rmQrPlaceholder(msg){
+  var qr=$('rmQr');
+  if(qr)qr.innerHTML='<span class="rm-qr-fallback">'+esc(msg)+'</span>';
+}
 function pickRemoteUrl(urls){
   urls=urls||[];
   for(var i=0;i<urls.length;i++)if(urls[i]&&urls[i].indexOf('127.0.0.1')<0)return urls[i];
@@ -1911,7 +1915,7 @@ function disconnectRemote(){
   remoteSession=null;remoteExpiry=0;
   updatePhoneUI(false);
   rmStatus('Remote off','');
-  var q=$('rmQr');if(q)q.innerHTML='';
+  rmQrPlaceholder('Remote off — press “New code” or reopen this panel to pair again.');
   var c=$('rmCode');if(c)c.textContent='--------';
   var u=$('rmUrl');if(u)u.textContent='';
   var t=$('rmTimer');if(t)t.textContent='';
@@ -1921,13 +1925,28 @@ function connectRemote(){
   var url=remoteServerUrl();
   if(!url){
     rmStatus('Enter your computer’s remote URL below — run node server.js first','err');
+    rmQrPlaceholder('No pairing server set. Run node server.js on the computer, then enter ws://COMPUTER-IP:8080/remote-ws below.');
     var inp=$('remoteUrl');if(inp)try{inp.focus();}catch(e){}
     return;
   }
+  if(location.protocol==='https:'&&/^ws:\/\//i.test(url)){
+    rmStatus('HTTPS pages block ws:// — open Tuner over http (e.g. http://COMPUTER-IP:8000) or use a wss:// server','err');
+    rmQrPlaceholder('ws:// connections are blocked on HTTPS pages. Open Tuner over http, or set up a wss:// server.');
+    return;
+  }
+  var sameHost=false;
+  try{sameHost=(new URL(url)).hostname===location.hostname;}catch(e){}
+  if(/\.github\.io$/i.test(location.hostname)&&sameHost){
+    rmStatus('GitHub Pages can’t host the pairing server — run node server.js on the computer and open Tuner from there, or point a wss:// server below','err');
+    rmQrPlaceholder('No pairing server on GitHub Pages. Run node server.js on the computer and open Tuner from its http:// address, or set up a wss:// relay.');
+    var inp2=$('remoteUrl');if(inp2)try{inp2.focus();}catch(e){}
+    return;
+  }
   rmStatus('Connecting to '+url+' …','warn');
+  rmQrPlaceholder('Connecting to the pairing server…');
   var target=url;
   try{var x=new URL(url);x.searchParams.set('role','tv');target=x.href;}catch(e){}
-  try{remoteSock=new WebSocket(target);}catch(e){rmStatus('Invalid remote server URL','err');return;}
+  try{remoteSock=new WebSocket(target);}catch(e){rmStatus('Invalid remote server URL','err');rmQrPlaceholder('That server URL is not valid.');return;}
   remoteSock.onopen=function(){rmStatus('Connected to pairing server — waiting for phone','warn');};
   remoteSock.onmessage=function(ev){
     var m;try{m=JSON.parse(ev.data);}catch(e){return;}
@@ -1955,7 +1974,10 @@ function connectRemote(){
   };
   remoteSock.onclose=function(){
     remoteSock=null;
-    if(remoteSession)rmStatus('Pairing server offline — is node server.js running?','err');
+    if(!remoteSession){
+      rmStatus('Pairing server offline — start node server.js on the computer, then reopen this panel','err');
+      rmQrPlaceholder('No QR yet — the TV could not reach a pairing server (node server.js).');
+    }else rmStatus('Pairing server offline — is node server.js running?','err');
   };
 }
 function handleRemoteCommand(action){
