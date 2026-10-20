@@ -289,12 +289,6 @@ export default {
 
       if (!up) return new Response('Upstream fetch failed', { status: 502, headers: cors });
 
-      const resHeaders = new Headers();
-      up.headers.forEach((v, k) => {
-        if (!STRIP_HEADERS.has(k.toLowerCase())) resHeaders.set(k, v);
-      });
-      for (const [k, v] of Object.entries(cors)) resHeaders.set(k, v);
-
       const finalUrl = up.url || hop.url;
       let pathname = '';
       try {
@@ -302,7 +296,7 @@ export default {
       } catch {
         pathname = '';
       }
-      const ct = (up.headers.get('content-type') || '').toLowerCase();
+      let ct = (up.headers.get('content-type') || '').toLowerCase();
       const ctManifest = /mpegurl|vnd\.apple/i.test(ct);
       const pathManifest = /\.m3u8?$/i.test(pathname);
       const textLike = /^text\//i.test(ct);
@@ -310,23 +304,52 @@ export default {
       const clen = Number.parseInt(up.headers.get('content-length') || '0', 10) || 0;
       const canBuffer = clen === 0 || clen <= CONFIG.MAX_MANIFEST_BYTES;
 
+      // A partial manifest cannot be rewritten safely — the same URL is
+      // re-requested without the Range header so the whole playlist is buffered.
+      if (up.status === 206 && maybeText && canBuffer) {
+        try {
+          if (up.body) await up.body.cancel();
+        } catch {
+          /* ignore */
+        }
+        const fwd2 = new Headers();
+        for (const h of ['accept', 'accept-language', 'if-none-match', 'if-modified-since']) {
+          const v = req.headers.get(h);
+          if (v) fwd2.set(h, v);
+        }
+        fwd2.set('User-Agent', req.headers.get('User-Agent') || 'Mozilla/5.0 (compatible; TunerProxy/2.0)');
+        fwd2.set('Accept-Encoding', 'identity');
+        if (hop.authorization) fwd2.set('Authorization', hop.authorization);
+        up = await fetch(hop.url, { method: 'GET', headers: fwd2, redirect: 'manual', signal: ac.signal });
+        ct = (up.headers.get('content-type') || '').toLowerCase();
+      }
+
+      const resHeaders = new Headers();
+      up.headers.forEach((v, k) => {
+        if (!STRIP_HEADERS.has(k.toLowerCase())) resHeaders.set(k, v);
+      });
+      for (const [k, v] of Object.entries(cors)) resHeaders.set(k, v);
+
       if (req.method === 'GET' && maybeText && up.status !== 206 && up.status < 400 && canBuffer && up.body) {
         const buf = await readCapped(up.body, CONFIG.MAX_MANIFEST_BYTES);
-        if (buf) {
-          const text = new TextDecoder('utf-8').decode(buf);
-          if (/^\uFEFF?#EXTM3U/.test(text)) {
-            const selfBase = `${urlObj.origin}${urlObj.pathname}?url=`;
-            const rewritten = rewriteManifest(text, finalUrl, selfBase);
-            for (const k of ['content-length', 'content-encoding', 'etag', 'last-modified', 'expires', 'accept-ranges', 'content-range']) {
-              resHeaders.delete(k);
-            }
-            resHeaders.set('content-type', 'application/vnd.apple.mpegurl');
-            resHeaders.set('cache-control', 'no-store');
-            return new Response(rewritten, { status: up.status, headers: resHeaders });
-          }
-          resHeaders.set('content-length', String(buf.byteLength));
-          return new Response(buf, { status: up.status, headers: resHeaders });
+        // readCapped locks + consumes the stream: when it bails out (over
+        // cap) the body is unusable, so never fall through to up.body.
+        if (!buf) {
+          return new Response('Upstream response too large', { status: 502, headers: cors });
         }
+        const text = new TextDecoder('utf-8').decode(buf);
+        if (/^\uFEFF?#EXTM3U/.test(text)) {
+          const selfBase = `${urlObj.origin}${urlObj.pathname}?url=`;
+          const rewritten = rewriteManifest(text, finalUrl, selfBase);
+          for (const k of ['content-length', 'content-encoding', 'etag', 'last-modified', 'expires', 'accept-ranges', 'content-range']) {
+            resHeaders.delete(k);
+          }
+          resHeaders.set('content-type', 'application/vnd.apple.mpegurl');
+          resHeaders.set('cache-control', 'no-store');
+          return new Response(rewritten, { status: up.status, headers: resHeaders });
+        }
+        resHeaders.set('content-length', String(buf.byteLength));
+        return new Response(buf, { status: up.status, headers: resHeaders });
       }
 
       return new Response(req.method === 'HEAD' ? null : up.body, { status: up.status, headers: resHeaders });

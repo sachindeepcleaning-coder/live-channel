@@ -322,7 +322,7 @@ a.nav-item{text-decoration:none}
 .g-p:hover{border-color:var(--blue)}
 .g-p.on{border-color:var(--accent);background:var(--accent-soft)}
 .g-p.on b{color:#ffd7dd}
-.g-nowline{position:absolute;width:2px;background:var(--accent);z-index:2;pointer-events:none;box-shadow:0 0 8px #ff244288}
+.g-nowline{position:absolute;top:38px;bottom:0;width:2px;background:var(--accent);z-index:2;pointer-events:none;box-shadow:0 0 8px #ff244288}
 .g-empty{padding:60px 20px;text-align:center;color:var(--muted)}
 .g-empty .btn{margin-top:14px}
 .g-empty small{display:block;margin-top:8px;color:#6b7a93}
@@ -538,7 +538,7 @@ body.crt #remoteDlg input{background:#0b1108;border-color:#2e4527;color:#d8ffc2}
             <button class="crt-key" id="crtMute" type="button" title="Mute" aria-pressed="false">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10v4h3l4 3V7l-4 3H4z"/><path d="M16 9l5 6M21 9l-5 6"/></svg><span>Mute</span>
             </button>
-            <button class="crt-key" id="crtInfo" type="button" title="Channel info (I)">
+            <button class="crt-key" id="crtInfoBtn" type="button" title="Channel info (I)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 11v5M12 8h.01"/></svg><span>Info</span>
             </button>
             <button class="crt-key" id="crtShare" type="button" title="Share this channel">
@@ -1359,6 +1359,13 @@ function onHlsError(d,ch,viaProxy,playUrl,attempt){
   if(d.type==='mediaError'&&mediaRecovered<2&&now-lastRecoverAt>5000){
     mediaRecovered++;lastRecoverAt=now;
     try{if(hls)hls.recoverMediaError();}catch(e){}
+    return;
+  }
+  // Playlist/manifest load failures cannot be retried with startLoad() —
+  // the playlist loader's startLoad() is a no-op in hls.js, so the request
+  // is never re-issued. Fail over (proxy) immediately instead.
+  if(d.details&&/^(manifestLoadError|manifestLoadTimeout|levelLoadError|levelLoadTimeout)$/.test(d.details)){
+    onFatal(ch,'HLS '+(d.type||'')+' / '+(d.details||'error'),viaProxy,playUrl,attempt);
     return;
   }
   if((d.type==='networkError'||d.type==='otherError')&&!netRetried){
@@ -2185,6 +2192,9 @@ function epgTime(s){
 function normName(s){
   return String(s||'').toLowerCase()
     .replace(/\b(uhd|fhd|hd|sd|4k|8k|tv|channel)\b/g,' ')
+    // quality markers appear on playlist names but not on XMLTV display-names:
+    // (1080p), 720p, 1080i, 576p …
+    .replace(/\b\d{3,4}[pi]\b/g,' ')
     .replace(/[^a-z0-9\u0900-\u097f]+/g,' ')
     .replace(/\s+/g,' ').trim();
 }
@@ -2271,7 +2281,13 @@ function parseEPG(xml,st){
 }
 function chanEpgId(ch){
   if(!ch)return null;
-  if(ch.tvgId){var b=ch.tvgId.split('@')[0];if(epgMap[b])return b;}
+  // iptv-org tvg-ids and XMLTV channel ids both carry the @SD/@HD feed
+  // suffix, so the full id must be tried before the stripped one.
+  if(ch.tvgId){
+    if(epgMap[ch.tvgId])return ch.tvgId;
+    var b=ch.tvgId.split('@')[0];
+    if(epgMap[b])return b;
+  }
   var cands=epgIdsByName[normName(ch.name)];
   if(cands){
     for(var i=0;i<cands.length;i++)if(epgMap[cands[i]])return cands[i];
@@ -2431,6 +2447,7 @@ function showView(v){
   syncHash();
   pushRemoteState();
   updateCrtChyron();
+  updateGridMeta();
 }
 function setTab(t,goHome){
   tab=t;group='';
@@ -2607,6 +2624,7 @@ function loadText(text,label,token){
     countsEl.textContent='0 channels';
     $('gridMeta').textContent='';
     moreBtn.style.display='none';
+    updateCounts();
     return parsed;
   }
   applyFilters(true);
@@ -2865,7 +2883,7 @@ $('crtChannels').onclick=openCrtGuide;
 $('crtVolDown').onclick=function(){crtVolume(-0.1);};
 $('crtVolUp').onclick=function(){crtVolume(0.1);};
 $('crtMute').onclick=crtToggleMute;
-$('crtInfo').onclick=toggleCrtInfo;
+$('crtInfoBtn').onclick=toggleCrtInfo;
 $('crtInfoX').onclick=closeCrtInfo;
 $('crtShare').onclick=shareCurrent;
 $('crtFull').onclick=toggleFullscreen;
@@ -2891,12 +2909,14 @@ $('rmNew').onclick=function(){
 $('rmStop').onclick=function(){disconnectRemote();toast('Remote stopped');};
 $('remoteUrl').onchange=function(){sset(REMOTE_SERVER_KEY,this.value.trim());connectRemote();};
 syncCountrySelect(urlInput.value);
+// Read the hash BEFORE showView(): showView() → syncHash() rewrites the URL
+// and would wipe #ch= / #tab= deep links before they are applied.
+var _initHash=parseHash();
 showView('home');
 try{
-  var h0=parseHash();
-  if(h0.ch)pendingDeepLink=ub64u(h0.ch);
-  if(h0.tab==='fav'||h0.tab==='recent')setTab(h0.tab,false);
-  else if(h0.tab==='guide')openGuide();
+  if(_initHash.ch)pendingDeepLink=ub64u(_initHash.ch);
+  if(_initHash.tab==='fav'||_initHash.tab==='recent')setTab(_initHash.tab,false);
+  else if(_initHash.tab==='guide')openGuide();
 }catch(e){}
 detectRegion();
 try{pendingQ=sget('tuner_q')||'auto';}catch(e){}

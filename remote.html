@@ -108,8 +108,10 @@
   var wsBase = params.get('ws');
   if (!wsBase) {
     var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    var port = location.port || '8080'; // server.js default
-    wsBase = proto + '//' + location.hostname + ':' + port + '/remote-ws';
+    // Default to the port this page came from — behind a tunnel or standard-
+    // port reverse proxy there is no :8080 to talk to.
+    var port = location.port || (location.protocol === 'https:' ? '443' : '80');
+    wsBase = proto + '//' + location.hostname + (location.port ? ':' + port : '') + '/remote-ws';
   }
 
   function setStatus(text, cls) {

@@ -33,13 +33,13 @@
  */
 
 const http = require('http');
+const https = require('https');
 const dns = require('dns');
 const net = require('net');
 const crypto = require('crypto');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
-const { Readable } = require('stream');
 
 const PORT = Number.parseInt(process.env.PORT || '8080', 10) || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -103,8 +103,24 @@ function blockedV4(ip) {
   if (p[0] === 192 && p[1] === 0 && p[2] === 0) return true;
   if (p[0] === 100 && p[1] >= 64 && p[1] <= 127) return true;
   if (p[0] === 198 && (p[1] === 18 || p[1] === 19)) return true;
+  if (p[0] === 192 && p[1] === 0 && p[2] === 2) return true;       // TEST-NET-1
+  if (p[0] === 198 && p[1] === 51 && p[2] === 100) return true;    // TEST-NET-2
+  if (p[0] === 203 && p[1] === 0 && p[2] === 113) return true;     // TEST-NET-3
   if (p[0] >= 224) return true;
   return false;
+}
+
+/* ::ffff:127.0.0.1 style AND ::ffff:7f00:1 style IPv4-mapped IPv6 → v4 text */
+function mappedV4(ip) {
+  let m = ip.match(/::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
+  if (m) return m[1];
+  m = ip.match(/(?:^|:)ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+  if (m) {
+    const a = parseInt(m[1], 16);
+    const b = parseInt(m[2], 16);
+    return [a >> 8, a & 255, b >> 8, b & 255].join('.');
+  }
+  return null;
 }
 
 function blockedIp(raw) {
@@ -113,15 +129,12 @@ function blockedIp(raw) {
   if (fam === 4) return blockedV4(ip);
   if (fam === 6) {
     if (ip === '::' || ip === '::1') return true;
-    if (/^f[cd]/.test(ip)) return true;
-    if (/^fe[89ab]/.test(ip)) return true;
-    if (/^ff/.test(ip)) return true;
-    const m = ip.match(/(?:^|:)ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-    if (m) {
-      const a = parseInt(m[1], 16);
-      const b = parseInt(m[2], 16);
-      return blockedV4([a >> 8, a & 255, b >> 8, b & 255].join('.'));
-    }
+    if (/^f[cd]/.test(ip)) return true;       // unique-local / site-local
+    if (/^fe[89ab]/.test(ip)) return true;    // link-local
+    if (/^ff/.test(ip)) return true;          // multicast
+    if (/^64:ff9b:/.test(ip)) return true;    // NAT64 well-known prefix
+    const v4 = mappedV4(ip);
+    if (v4) return blockedV4(v4);
     return false;
   }
   return true;
@@ -141,19 +154,9 @@ function hostBlocked(hostname) {
   return false;
 }
 
-async function resolvesSafe(hostname) {
-  try {
-    const addrs = await dns.promises.lookup(hostname, { all: true, verbatim: true });
-    if (!addrs.length) return false;
-    for (const a of addrs) {
-      if (blockedIp(a.address)) return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
+/* Resolve + vet the target, and PIN the vetted address so the socket we
+   connect to is the same one we checked — this closes the DNS-rebinding
+   window that a separate check-then-fetch leaves open. */
 async function safeTarget(raw) {
   let u;
   try {
@@ -163,8 +166,22 @@ async function safeTarget(raw) {
   }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
   if (hostBlocked(u.hostname)) return null;
-  if (net.isIP(u.hostname.replace(/^\[|\]$/g, '')) === 0) {
-    if (!(await resolvesSafe(u.hostname))) return null;
+  const literal = u.hostname.replace(/^\[|\]$/g, '');
+  const fam = net.isIP(literal);
+  let pin = null;
+  if (fam) {
+    if (blockedIp(literal)) return null;
+    pin = { address: literal, family: fam };
+  } else {
+    let addrs;
+    try {
+      addrs = await dns.promises.lookup(u.hostname, { all: true, verbatim: true });
+    } catch {
+      return null;
+    }
+    const ok = (addrs || []).filter((a) => a && !blockedIp(a.address));
+    if (!ok.length) return null;
+    pin = { address: ok[0].address, family: ok[0].family };
   }
   let authorization = '';
   if (u.username || u.password) {
@@ -180,7 +197,49 @@ async function safeTarget(raw) {
     u.username = '';
     u.password = '';
   }
-  return { url: u.toString(), authorization };
+  return { url: u.toString(), pin, authorization };
+}
+
+/* One upstream request against the pinned IP. idleMs bounds socket
+   inactivity (slow-loris headers and mid-stream stalls alike). */
+function upstreamRequest(hop, method, headers, idleMs) {
+  return new Promise((resolve, reject) => {
+    let u;
+    try {
+      u = new URL(hop.url);
+    } catch (e) {
+      reject(e);
+      return;
+    }
+    const isHttps = u.protocol === 'https:';
+    const pin = hop.pin;
+    const opts = {
+      host: u.hostname, // kept for SNI/Host/cert validation…
+      port: u.port || (isHttps ? 443 : 80),
+      path: u.pathname + u.search,
+      method,
+      headers,
+      // …while lookup always answers with the address we vetted.
+      lookup(host, dnsopts, cb) {
+        const first = [{ address: pin.address, family: pin.family }];
+        if (dnsopts && dnsopts.all) cb(null, first);
+        else cb(null, pin.address, pin.family);
+      },
+    };
+    if (isHttps) opts.servername = u.hostname;
+    const hardKill = setTimeout(() => req.destroy(new Error('upstream timeout')), idleMs + 15000);
+    const req = (isHttps ? https : http).request(opts, (res) => {
+      clearTimeout(hardKill);
+      res.setTimeout(idleMs, () => req.destroy(new Error('upstream idle timeout')));
+      resolve(res);
+    });
+    req.setTimeout(idleMs, () => req.destroy(new Error('upstream idle timeout')));
+    req.on('error', (e) => {
+      clearTimeout(hardKill);
+      reject(e);
+    });
+    req.end();
+  });
 }
 
 function absUrl(rel, base) {
@@ -210,25 +269,34 @@ function rewriteManifest(text, manifestUrl, selfBase) {
   return out.join('\n');
 }
 
-async function readCapped(body, cap) {
-  const reader = body.getReader();
-  const chunks = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > cap) {
-      try {
-        await reader.cancel();
-      } catch {
-        /* ignore */
+/* Buffer a node response body up to `cap` bytes. Resolves null when the cap
+   is exceeded or the stream fails — callers must then give up on the body
+   (it is already destroyed/locked), never pipe it. */
+function readCapped(res, cap) {
+  return new Promise((resolve) => {
+    const chunks = [];
+    let total = 0;
+    let done = false;
+    const give = (v) => {
+      if (done) return;
+      done = true;
+      resolve(v);
+    };
+    res.on('data', (c) => {
+      if (done) return;
+      total += c.length;
+      if (total > cap) {
+        chunks.length = 0;
+        res.destroy();
+        give(null);
+        return;
       }
-      return null;
-    }
-    chunks.push(Buffer.from(value));
-  }
-  return Buffer.concat(chunks);
+      chunks.push(c);
+    });
+    res.on('end', () => give(Buffer.concat(chunks)));
+    res.on('aborted', () => give(null));
+    res.on('error', () => give(null));
+  });
 }
 
 /* ==========================================================================
@@ -456,6 +524,15 @@ function handleRemoteMessage(client, text) {
   }
 }
 
+function dispatchWsMessage(client, opcode, buf) {
+  if (opcode === 0x2) {
+    wsEnd(client, 1003, 'Binary frames are not supported');
+    return;
+  }
+  client.lastSeen = Date.now();
+  handleRemoteMessage(client, buf.toString('utf8'));
+}
+
 const server = http.createServer(async (req, res) => {
   res.on('error', () => {});
   const origin = req.headers.origin || '';
@@ -517,66 +594,109 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const ac = new AbortController();
-  const clientGone = () => {
+  // Lifecycle: `deadline` bounds connect + response headers only. Once the
+  // body is streaming, the upstream idle timeout and the client 'close' event
+  // take over — a long live stream is never cut off, but a stalled one is.
+  let up = null;
+  const abortUpstream = () => {
     try {
-      ac.abort();
+      if (up && up.req) up.req.destroy();
+      else if (up) up.destroy();
     } catch {
       /* ignore */
     }
   };
-  req.on('close', clientGone);
-  const killer = setTimeout(clientGone, FETCH_TIMEOUT_MS);
+  const deadline = setTimeout(() => {
+    if (res.headersSent) {
+      try {
+        res.destroy();
+      } catch {
+        /* ignore */
+      }
+    } else {
+      try {
+        res.writeHead(504, cors);
+        res.end('Upstream timeout');
+      } catch {
+        /* client gone */
+      }
+    }
+    abortUpstream();
+  }, FETCH_TIMEOUT_MS);
+  res.on('close', () => {
+    clearTimeout(deadline);
+    // Also fires when the client disconnects mid-stream — stop pulling bytes
+    // that nobody will read.
+    if (!res.writableEnded) abortUpstream();
+  });
+
+  const respond = (code, headers, body) => {
+    try {
+      res.writeHead(code, headers);
+      res.end(body);
+    } catch {
+      /* client gone */
+    }
+  };
+  const forwardHeaders = (hop, method, withRange) => {
+    const u = new URL(hop.url);
+    const headers = {
+      Host: u.host,
+      'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (compatible; TunerProxy/2.0)',
+      'Accept-Encoding': 'identity',
+    };
+    const allow = withRange
+      ? ['range', 'accept', 'accept-language', 'if-range', 'if-none-match', 'if-modified-since']
+      : ['accept', 'accept-language', 'if-none-match', 'if-modified-since'];
+    for (const h of allow) {
+      if (req.headers[h]) headers[h] = req.headers[h];
+    }
+    if (hop.authorization) headers.Authorization = hop.authorization;
+    return headers;
+  };
+  const outHeadersFrom = (r) => {
+    const out = {};
+    for (const [k, v] of Object.entries(r.headers || {})) {
+      const kl = String(k).toLowerCase();
+      if (STRIP_HEADERS.has(kl)) continue;
+      out[kl] = Array.isArray(v) ? v.join(', ') : String(v);
+    }
+    for (const k of Object.keys(cors)) out[String(k).toLowerCase()] = cors[k];
+    return out;
+  };
 
   try {
     let hop = await safeTarget(target);
     if (!hop) {
-      res.writeHead(403, cors);
-      res.end('Blocked target');
+      clearTimeout(deadline);
+      respond(403, cors, 'Blocked target');
       return;
     }
 
     let method = req.method;
-    let up = null;
     for (let i = 0; i <= MAX_REDIRECTS; i++) {
-      const headers = {
-        'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (compatible; TunerProxy/2.0)',
-        'Accept-Encoding': 'identity',
-      };
-      for (const h of ['range', 'accept', 'accept-language', 'if-range', 'if-none-match', 'if-modified-since']) {
-        if (req.headers[h]) headers[h] = req.headers[h];
-      }
-      if (hop.authorization) headers.Authorization = hop.authorization;
+      up = await upstreamRequest(hop, method, forwardHeaders(hop, method, true), FETCH_TIMEOUT_MS);
 
-      up = await fetch(hop.url, { method, headers, redirect: 'manual', signal: ac.signal });
-
-      const isRedirect = up.status >= 300 && up.status < 400 && up.headers.get('location');
+      const isRedirect = up.statusCode >= 300 && up.statusCode < 400 && up.headers.location;
       if (!isRedirect) break;
       if (i === MAX_REDIRECTS) {
-        try {
-          if (up.body) await up.body.cancel();
-        } catch {
-          /* ignore */
-        }
-        res.writeHead(502, cors);
-        res.end('Too many redirects');
+        up.destroy();
+        clearTimeout(deadline);
+        respond(502, cors, 'Too many redirects');
         return;
       }
-      let loc;
+      let loc = null;
       try {
-        loc = new URL(up.headers.get('location'), hop.url).toString();
+        loc = new URL(up.headers.location, hop.url).toString();
       } catch {
         loc = null;
       }
       const nextHop = loc ? await safeTarget(loc) : null;
-      try {
-        if (up.body) await up.body.cancel();
-      } catch {
-        /* ignore */
-      }
+      const was303 = up.statusCode === 303;
+      up.destroy(); // redirect body is never read
       if (!nextHop) {
-        res.writeHead(403, cors);
-        res.end('Blocked redirect target');
+        clearTimeout(deadline);
+        respond(403, cors, 'Blocked redirect target');
         return;
       }
       let sameOrigin = false;
@@ -587,91 +707,93 @@ const server = http.createServer(async (req, res) => {
       }
       nextHop.authorization = sameOrigin ? hop.authorization : '';
       hop = nextHop;
-      if (up.status === 303) method = 'GET';
+      if (was303) method = 'GET';
     }
 
     if (!up) {
-      res.writeHead(502, cors);
-      res.end('Upstream fetch failed');
+      clearTimeout(deadline);
+      respond(502, cors, 'Upstream fetch failed');
       return;
     }
 
-    const outHeaders = {};
-    up.headers.forEach((v, k) => {
-      const kl = String(k).toLowerCase();
-      if (!STRIP_HEADERS.has(kl)) outHeaders[kl] = v;
-    });
-    for (const k of Object.keys(cors)) outHeaders[String(k).toLowerCase()] = cors[k];
+    // Headers are in: the connect deadline no longer applies.
+    clearTimeout(deadline);
 
-    let finalUrl = hop.url;
-    try {
-      finalUrl = up.url || hop.url;
-    } catch {
-      /* ignore */
-    }
+    // IncomingMessage.url is only the path, so the last hop we asked for is
+    // the authority for manifest rewriting.
+    const finalUrl = hop.url;
     let pathname = '';
     try {
       pathname = new URL(finalUrl).pathname;
     } catch {
       pathname = '';
     }
-    const ct = (up.headers.get('content-type') || '').toLowerCase();
-    const ctManifest = /mpegurl|vnd\.apple/i.test(ct);
-    const pathManifest = /\.m3u8?$/i.test(pathname);
-    const textLike = /^text\//i.test(ct);
-    const maybeText = ctManifest || pathManifest || textLike;
-    const clen = Number.parseInt(up.headers.get('content-length') || '0', 10) || 0;
+    let status = up.statusCode || 502;
+    let outHeaders = outHeadersFrom(up);
+    const ct = String(up.headers['content-type'] || '').toLowerCase();
+    const maybeText = /mpegurl|vnd\.apple/i.test(ct) || /\.m3u8?$/i.test(pathname) || /^text\//i.test(ct);
+    const clen = Number.parseInt(up.headers['content-length'] || '0', 10) || 0;
     const canBuffer = clen === 0 || clen <= MAX_MANIFEST_BYTES;
 
-    if (req.method === 'GET' && maybeText && up.status !== 206 && up.status < 400 && canBuffer && up.body) {
-      const buf = await readCapped(up.body, MAX_MANIFEST_BYTES);
-      if (buf) {
-        const text = buf.toString('utf8');
-        if (/^\uFEFF?#EXTM3U/.test(text)) {
-          const host = PUBLIC_BASE_URL
-            ? PUBLIC_BASE_URL
-            : `${req.socket.encrypted ? 'https' : 'http'}://${req.headers.host || 'localhost:' + PORT}`;
-          const selfBase = host.replace(/\/+$/, '') + '/?url=';
-          const rewritten = rewriteManifest(text, finalUrl, selfBase);
-          for (const k of ['content-length', 'content-encoding', 'etag', 'last-modified', 'expires', 'accept-ranges', 'content-range']) {
-            delete outHeaders[k];
-          }
-          outHeaders['content-type'] = 'application/vnd.apple.mpegurl';
-          outHeaders['cache-control'] = 'no-store';
-          res.writeHead(up.status, outHeaders);
-          res.end(rewritten);
-          return;
-        }
-        outHeaders['content-length'] = buf.length;
-        res.writeHead(up.status, outHeaders);
-        res.end(buf);
-        return;
+    if (req.method === 'GET' && maybeText && status === 206 && canBuffer) {
+      // A partial manifest cannot be rewritten safely — re-request it whole,
+      // without forwarding the Range header.
+      try {
+        up.destroy();
+      } catch {
+        /* ignore */
       }
+      up = await upstreamRequest(hop, 'GET', forwardHeaders(hop, 'GET', false), FETCH_TIMEOUT_MS);
+      status = up.statusCode || 502;
+      outHeaders = outHeadersFrom(up);
     }
 
-    res.writeHead(up.status, outHeaders);
-    if (req.method === 'HEAD' || !up.body) {
-      res.end();
+    if (req.method === 'GET' && maybeText && status !== 206 && status < 400 && canBuffer) {
+      const buf = await readCapped(up, MAX_MANIFEST_BYTES);
+      if (!buf) {
+        respond(502, cors, 'Upstream response too large or truncated');
+        return;
+      }
+      const text = buf.toString('utf8');
+      if (/^\uFEFF?#EXTM3U/.test(text)) {
+        const host = PUBLIC_BASE_URL
+          ? PUBLIC_BASE_URL
+          : `${req.socket.encrypted ? 'https' : 'http'}://${req.headers.host || 'localhost:' + PORT}`;
+        const selfBase = host.replace(/\/+$/, '') + '/?url=';
+        const rewritten = rewriteManifest(text, finalUrl, selfBase);
+        for (const k of ['content-length', 'content-encoding', 'etag', 'last-modified', 'expires', 'accept-ranges', 'content-range']) {
+          delete outHeaders[k];
+        }
+        outHeaders['content-type'] = 'application/vnd.apple.mpegurl';
+        outHeaders['cache-control'] = 'no-store';
+        respond(200, outHeaders, rewritten);
+        return;
+      }
+      for (const k of ['content-length', 'content-range', 'accept-ranges', 'content-encoding']) delete outHeaders[k];
+      outHeaders['content-length'] = String(buf.length);
+      respond(200, outHeaders, buf);
       return;
     }
-    const body = Readable.fromWeb(up.body);
-    body.on('error', () => {
+
+    if (req.method === 'HEAD' || status === 204 || status === 304) {
+      respond(status, outHeaders);
+      return;
+    }
+
+    res.writeHead(status, outHeaders);
+    up.on('error', () => {
       try {
         res.destroy();
       } catch {
         /* ignore */
       }
     });
-    body.pipe(res);
-  } catch {
+    up.pipe(res);
+  } catch (e) {
+    abortUpstream();
     if (!res.headersSent) {
-      const code = ac.signal.aborted ? 504 : 502;
-      try {
-        res.writeHead(code, cors);
-        res.end('Upstream fetch failed');
-      } catch {
-        /* client gone */
-      }
+      const code = /timeout/i.test(String((e && e.message) || '')) ? 504 : 502;
+      respond(code, cors, 'Upstream fetch failed');
     } else {
       try {
         res.destroy();
@@ -679,9 +801,6 @@ const server = http.createServer(async (req, res) => {
         /* ignore */
       }
     }
-  } finally {
-    clearTimeout(killer);
-    req.removeListener('close', clientGone);
   }
 });
 
@@ -715,6 +834,8 @@ server.on('upgrade', (req, socket) => {
     session: null,
     lastSeen: Date.now(),
     buf: Buffer.alloc(0),
+    fragType: null,
+    fragBuf: null,
     hits: [],
   };
   wsClients.set(socket, client);
@@ -751,13 +872,22 @@ server.on('upgrade', (req, socket) => {
       }
       client.buf = b.subarray(need);
       if (opcode === 0x8) {
-        cleanupClient(client);
-        wsClients.delete(socket);
+        // RFC 6455 §5.5.1: the peer's close frame must be echoed so the
+        // closing handshake completes cleanly.
         try {
-          socket.end();
+          socket.write(wsFrame(0x8, payload));
         } catch {
           /* ignore */
         }
+        cleanupClient(client);
+        wsClients.delete(socket);
+        setTimeout(() => {
+          try {
+            socket.end();
+          } catch {
+            /* ignore */
+          }
+        }, 60);
         return;
       }
       if (opcode === 0x9) {
@@ -772,9 +902,31 @@ server.on('upgrade', (req, socket) => {
         client.lastSeen = Date.now();
         continue;
       }
-      if (opcode === 0x1 && fin) {
-        client.lastSeen = Date.now();
-        handleRemoteMessage(client, payload.toString('utf8'));
+      if (opcode === 0x0) {
+        // Continuation frame — reassemble, dispatch on the final one.
+        if (!client.fragType) continue; // unsolicited continuation: ignore
+        client.fragBuf = client.fragBuf ? Buffer.concat([client.fragBuf, payload]) : payload;
+        if (client.fragBuf.length > 65536) {
+          wsEnd(client, 1009, 'Message too big');
+          return;
+        }
+        if (fin) {
+          const type = client.fragType;
+          const msg = client.fragBuf;
+          client.fragType = null;
+          client.fragBuf = null;
+          dispatchWsMessage(client, type, msg);
+        }
+        continue;
+      }
+      if (opcode === 0x1 || opcode === 0x2) {
+        if (!fin) {
+          client.fragType = opcode;
+          client.fragBuf = payload;
+        } else {
+          dispatchWsMessage(client, opcode, payload);
+        }
+        continue;
       }
     }
   });
