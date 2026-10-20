@@ -331,7 +331,7 @@ a.nav-item{text-decoration:none}
 
 /* ---------- v2.1: CRT Mode ---------- */
 /* body.crt drives the whole look; overlays are pointer-events:none so playback stays usable. */
-body.crt .actions,body.crt .desc,body.crt .kbd-hint{display:none}
+body.crt .actions,body.crt .desc,body.crt .kbd-hint,body.crt .back-btn,body.crt .now{display:none}
 body.crt .list-pane,body.crt .topbar,body.crt .chips-row,body.crt #bottomNav{display:none}
 body.crt .player-pane{max-width:1150px;margin:0 auto;width:100%}
 body.crt .video-wrap{border:12px solid #15161a;border-radius:24px;max-height:72dvh;box-shadow:inset 0 0 70px #000,0 22px 55px #0009,0 0 0 2px #26282f;background:#050607}
@@ -347,12 +347,56 @@ body.crt .crt-fx{display:block}
 .crt-zap::after{content:'';position:absolute;left:-10%;right:-10%;top:40%;height:16%;background:linear-gradient(transparent,#fff 45%,#000 55%,transparent);opacity:.9;mix-blend-mode:screen;animation:crtTear .4s steps(3) both}
 @keyframes crtZap{0%{opacity:0}10%{opacity:1}60%{opacity:.9}100%{opacity:0}}
 @keyframes crtTear{0%{transform:translateY(-170%) scaleY(.2)}40%{transform:translateY(130%) scaleY(.8) skewX(16deg)}70%{transform:translateY(-30%) scaleY(.4) skewX(-12deg)}100%{transform:translateY(0) scaleY(.15);opacity:0}}
-.crt-actions{display:none;align-items:center;gap:10px;padding:14px 2px 0;flex-wrap:wrap}
+.tv-unit{position:relative}
+.crt-actions{display:none;position:absolute;left:10px;right:10px;bottom:10px;z-index:6;flex-direction:column;gap:5px;padding:8px 10px;border-radius:12px;background:linear-gradient(180deg,rgba(13,19,10,.91),rgba(5,8,4,.95));border:1px solid #2f4a28;box-shadow:0 12px 32px #000a,inset 0 1px 0 #ffffff10;backdrop-filter:blur(6px)}
 body.crt .crt-actions{display:flex}
-.crt-tag{font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:3px;color:#9fe870;border:1px solid #2d4a22;background:#0d1409;border-radius:6px;padding:3px 8px}
-#crtVol{flex:1;min-width:120px;max-width:280px;accent-color:#9fe870;height:34px}
-.crt-actions .act{background:#101216;border-color:#2c2f36;color:#cdd5e0}
-@media (max-width:899px){body.crt .video-wrap{border-width:7px;border-radius:16px}.crt-actions{gap:8px}body.crt #watchView{padding-bottom:10px}}
+body.crt .crt-actions[hidden]{display:none}
+.crt-keyrow,.crt-util{display:flex;gap:6px;flex-wrap:wrap;min-width:0}
+.crt-keyrow{justify-content:center}
+.crt-util{justify-content:flex-end;border-top:1px solid #1c2b18;padding-top:6px}
+.crt-key{flex:1 1 62px;max-width:120px;min-width:56px;min-height:46px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:4px 3px;border:1px solid #2e4527;border-radius:8px;background:linear-gradient(180deg,#121a0e,#0a0f08);color:#9fe870;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9.5px;letter-spacing:1.1px;text-transform:uppercase;cursor:pointer;box-shadow:inset 0 1px 0 #ffffff08;transition:background .15s,border-color .15s,color .15s,transform .06s}
+.crt-key:hover{background:#14200f;border-color:#527a42;color:#c6ff9e}
+.crt-key:active{transform:translateY(1px)}
+.crt-key:focus-visible{outline:2px solid #9fe870;outline-offset:1px}
+.crt-key svg{width:19px;height:19px;display:block}
+.crt-key.muted{color:#ff9d7a;border-color:#6b3524;background:#1a0f0a}
+.crt-util .crt-key{flex:0 0 auto;min-width:62px;min-height:36px;flex-direction:row;gap:6px;font-size:9px;padding:4px 10px}
+.crt-util .crt-key svg{width:15px;height:15px}
+.crt-osd{position:absolute;left:50%;top:12%;transform:translateX(-50%);z-index:5;max-width:92%;text-align:center;color:#b6ff7a;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;text-transform:uppercase;text-shadow:0 0 5px #7dff3d99,0 0 22px #3cff0040;opacity:0;transition:opacity .18s;pointer-events:none}
+.crt-osd.on{opacity:.95}
+.crt-osd b{display:block;font-size:clamp(20px,3vw,34px);font-weight:600;letter-spacing:.2em;text-shadow:0 0 7px #7dff3d99,0 2px 6px #000}
+.crt-osd small{display:block;margin-top:5px;font-size:clamp(10px,1.25vw,13px);letter-spacing:.34em;color:#d6ffc0;text-shadow:0 1px 3px #000,0 0 6px #000;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crt-chyron{position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:4;max-width:90%;padding:2px 10px;color:#a9f07f;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:clamp(11px,1.4vw,16px);letter-spacing:.24em;text-transform:uppercase;text-shadow:0 0 6px #5fdd2c66,0 1px 2px #000;opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+.crt-chyron[hidden]{display:none}
+.crt-info{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:7;width:min(530px,calc(100% - 28px));max-height:calc(100% - 40px);overflow:auto;padding:16px 18px;border:1px solid #33502b;border-radius:10px;background:rgba(5,9,4,.95);box-shadow:0 20px 60px #000c,inset 0 0 50px #0c1b0622;color:#cfe9c0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.crt-info[hidden],.crt-guide[hidden]{display:none}
+.ci-top{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#7fb96a;font-size:11px;letter-spacing:3px;text-transform:uppercase}
+.ci-x{width:34px;height:34px;border:1px solid #2e4527;border-radius:7px;background:#0d1409;color:#9fe870;font-size:15px;line-height:1}
+.ci-x:hover{border-color:#527a42;color:#c6ff9e}
+.ci-name{margin-top:10px;color:#e1ffd1;font-family:var(--font-d);font-size:20px;font-weight:700;line-height:1.25}
+.ci-meta{margin-top:6px;color:#8fc878;font-size:11.5px;word-break:break-word}
+.ci-epg{margin-top:12px;font-size:13.5px;line-height:1.55}
+.ci-epg small{color:#6f9a5d}
+.ci-url{margin-top:12px;padding-top:10px;border-top:1px solid #1c2b18;color:#5f8850;font-size:10.5px;word-break:break-all}
+.crt-guide{position:absolute;inset:0;z-index:8;display:flex;flex-direction:column;background:rgba(4,8,4,.97);color:#cfe9c0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.cg-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;border-bottom:1px solid #2b4526;color:#8fc878;font-size:11px;letter-spacing:3px;text-transform:uppercase}
+.cg-list{flex:1;overflow:auto;padding:4px 0 10px;min-height:0}
+.cg-row{display:flex;align-items:center;gap:12px;width:100%;padding:10px 16px;border:0;background:none;color:#cfe9c0;font:inherit;font-size:13.5px;text-align:left;cursor:pointer}
+.cg-row:hover,.cg-row:focus-visible{background:#12200d;outline:0}
+.cg-row.on{background:#17300f;color:#c6ff9e}
+.cg-num{flex:0 0 42px;color:#7fb96a;font-size:11px;letter-spacing:1px}
+.cg-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cg-grp{flex:0 1 34%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#6f9a5d;font-size:11px;text-align:right}
+.cg-empty{padding:40px 16px;text-align:center;color:#6f9a5d;font-size:12px}
+body.crt #remoteDlg .sheet{background:#070b06;border-color:#33502b;color:#d8ffc2;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+body.crt #remoteDlg h2{color:#c6ff9e;letter-spacing:1px}
+body.crt #remoteDlg .rm-code{color:#b6ff7a;text-shadow:0 0 16px #6fdd3c55}
+body.crt #remoteDlg .rm-status{background:#0b1108;border-color:#2e4527;color:#9fce8b}
+body.crt #remoteDlg .rm-hint{color:#7fa46d}
+body.crt #remoteDlg .field label{color:#8fc878}
+body.crt #remoteDlg input{background:#0b1108;border-color:#2e4527;color:#d8ffc2}
+@media (max-width:899px){body.crt .video-wrap{border-width:7px;border-radius:16px}body.crt #watchView{padding-bottom:10px}}
+@media (max-width:700px){.crt-actions{position:static;left:auto;right:auto;bottom:auto;margin-top:8px;padding:7px 8px;gap:6px}.crt-key{flex:1 1 50px;min-width:46px;min-height:50px;font-size:8px;letter-spacing:.6px;gap:3px}.crt-key svg{width:16px;height:16px}.crt-util .crt-key{min-width:52px;min-height:32px;font-size:8px}.crt-osd{top:16%}.crt-chyron{top:7px;letter-spacing:.16em}}
 
 /* ---------- v2.1: phone remote dialog ---------- */
 .rm-status{font-size:13px;color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin:0 0 14px}
@@ -407,7 +451,7 @@ body.crt .crt-actions{display:flex}
     <div class="nav-sep"></div>
     <div class="nav-head">Library</div>
     <button class="nav-item" data-nav="settings"><span class="ni-ico">⚙️</span>Sources &amp; proxy</button>
-    <a class="nav-item" data-apk-dl href="Tuner-v2.1.0.apk" download><span class="ni-ico">📱</span>Android app (APK)</a>
+    <a class="nav-item" data-apk-dl href="Tuner-v2.2.0.apk" download><span class="ni-ico">📱</span>Android app (APK)</a>
     <button class="nav-item" id="drawerRemote"><span class="ni-ico">📲</span>Phone remote</button>
     <div class="drawer-foot" id="drawerFoot">Loading…</div>
   </aside>
@@ -434,13 +478,14 @@ body.crt .crt-actions{display:flex}
       <div class="home-empty" id="homeEmpty" hidden></div>
       <button class="btn ghost" id="moreBtn">Show more</button>
       <div id="gridSentinel" aria-hidden="true"></div>
-      <div class="home-foot" data-apk-dl><a class="mini-btn" href="Tuner-v2.1.0.apk" download>📱 Get the Android app</a></div>
+      <div class="home-foot" data-apk-dl><a class="mini-btn" href="Tuner-v2.2.0.apk" download>📱 Get the Android app</a></div>
     </div>
   </main>
 
   <main id="watchView" hidden aria-label="Player">
     <section class="player-pane">
       <button class="btn ghost back-btn" id="backBtn">← Browse</button>
+      <div class="tv-unit" id="tvUnit">
       <div class="video-wrap" id="videoWrap">
         <video id="video" controls playsinline></video>
         <div class="crt-fx" aria-hidden="true"></div>
@@ -460,13 +505,61 @@ body.crt .crt-actions{display:flex}
           <div class="ov-sub">Pick a channel to start watching</div>
         </div>
         <div id="statsOv" hidden aria-label="Stream statistics"></div>
+        <div class="crt-chyron" id="crtChyron" hidden></div>
+        <div class="crt-osd" id="crtOsd" aria-hidden="true"></div>
+        <div class="crt-info" id="crtInfo" hidden>
+          <div class="ci-top"><span id="crtInfoCh">CH ---</span><button class="ci-x" id="crtInfoX" type="button" aria-label="Close channel info">✕</button></div>
+          <div class="ci-name" id="crtInfoName"></div>
+          <div class="ci-meta" id="crtInfoMeta"></div>
+          <div class="ci-epg" id="crtInfoEpg"></div>
+        </div>
+        <div class="crt-guide" id="crtGuide" hidden>
+          <div class="cg-head"><span>Channel guide</span><button class="ci-x" id="crtGuideX" type="button" aria-label="Close channel guide">✕</button></div>
+          <div class="cg-list" id="crtGuideList" role="listbox" aria-label="Channels"></div>
+        </div>
       </div>
       <div class="crt-actions" id="crtActions" hidden aria-label="CRT controls">
-        <span class="crt-tag">CRT</span>
-        <input type="range" id="crtVol" min="0" max="1" step="0.05" aria-label="Volume" />
-        <button class="act" id="crtMute" aria-label="Mute or unmute">🔊</button>
-        <button class="act" id="crtPower" title="Power on/off">⏻ Power</button>
-        <button class="act" id="crtExit" title="Turn CRT Mode off">📺 CRT off</button>
+          <div class="crt-keyrow">
+            <button class="crt-key" id="crtChDown" type="button" title="Previous channel (P)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg><span>CH −</span>
+            </button>
+            <button class="crt-key" id="crtChUp" type="button" title="Next channel (N)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg><span>CH +</span>
+            </button>
+            <button class="crt-key" id="crtChannels" type="button" title="Channel guide">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg><span>Channels</span>
+            </button>
+            <button class="crt-key" id="crtVolDown" type="button" title="Volume down">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10v4h3l4 3V7l-4 3H4z"/><path d="M16 12h5"/></svg><span>Vol −</span>
+            </button>
+            <button class="crt-key" id="crtVolUp" type="button" title="Volume up">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10v4h3l4 3V7l-4 3H4z"/><path d="M16 12h5M18.5 9.5v5"/></svg><span>Vol +</span>
+            </button>
+            <button class="crt-key" id="crtMute" type="button" title="Mute" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10v4h3l4 3V7l-4 3H4z"/><path d="M16 9l5 6M21 9l-5 6"/></svg><span>Mute</span>
+            </button>
+            <button class="crt-key" id="crtInfo" type="button" title="Channel info (I)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 11v5M12 8h.01"/></svg><span>Info</span>
+            </button>
+            <button class="crt-key" id="crtShare" type="button" title="Share this channel">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="12" r="2.2"/><circle cx="17" cy="6" r="2.2"/><circle cx="17" cy="18" r="2.2"/><path d="M8 11l7-4M8 13l7 4"/></svg><span>Share</span>
+            </button>
+            <button class="crt-key" id="crtFull" type="button" title="Fullscreen">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg><span>Fullscreen</span>
+            </button>
+            <button class="crt-key" id="crtRemote" type="button" title="Control this TV from your phone">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M10.5 18h3"/></svg><span>Remote</span>
+            </button>
+          </div>
+          <div class="crt-util">
+            <button class="crt-key" id="crtPower" type="button" title="Power on/off">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v8"/><path d="M6.5 6.5a8 8 0 1 0 11 0"/></svg><span>Power</span>
+            </button>
+            <button class="crt-key" id="crtExit" type="button" title="Turn CRT Mode off">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>CRT off</span>
+            </button>
+          </div>
+        </div>
       </div>
       <div class="now">
         <div class="now-logo" id="nowLogo">📺</div>
@@ -591,7 +684,7 @@ body.crt .crt-actions{display:flex}
     <div class="field" data-apk-dl>
       <label>Android app</label>
       <div class="row">
-        <a class="btn" href="Tuner-v2.1.0.apk" download data-apk-label>⬇ Download APK</a>
+        <a class="btn" href="Tuner-v2.2.0.apk" download data-apk-label>⬇ Download APK</a>
       </div>
       <small style="color:var(--muted);font-size:12px">Same Tuner, installed — no browser needed. Allow "install from unknown sources" if asked.</small>
     </div>
@@ -632,6 +725,7 @@ body.crt .crt-actions{display:flex}
       <kbd>G</kbd><span>Open TV guide</span>
       <kbd>S</kbd><span>Stream statistics</span>
       <kbd>C</kbd><span>CRT Mode on / off</span>
+      <kbd>I</kbd><span>Channel info (CRT Mode)</span>
       <kbd>Space</kbd><span>Play / pause</span>
       <kbd>M</kbd><span>Mute</span>
       <kbd>Esc</kbd><span>Back / close</span>
@@ -688,7 +782,7 @@ try{
   }
 }catch(e){}
 
-var APP_VERSION="2.1.0";
+var APP_VERSION="2.2.0";
 var DEFAULT_URL="https://iptv-org.github.io/iptv/countries/in.m3u";
 var FALLBACK_COUNTRIES=[["us","USA","🇺🇸"],["uk","UK","🇬🇧"],["ca","Canada","🇨🇦"],["au","Australia","🇦🇺"],["pk","Pakistan","🇵🇰"],["bd","Bangladesh","🇧🇩"],["ae","UAE","🇦🇪"],["sa","Saudi","🇸🇦"],["de","Germany","🇩🇪"],["fr","France","🇫🇷"],["it","Italy","🇮🇹"],["es","Spain","🇪🇸"],["br","Brazil","🇧🇷"],["mx","Mexico","🇲🇽"],["jp","Japan","🇯🇵"],["kr","Korea","🇰🇷"],["cn","China","🇨🇳"],["ru","Russia","🇷🇺"],["za","South Africa","🇿🇦"],["np","Nepal","🇳🇵"]];
 var FALLBACK_LANGS=[["hin","Hindi"],["eng","English"],["tam","Tamil"],["tel","Telugu"],["mal","Malayalam"],["kan","Kannada"],["ben","Bengali"],["mar","Marathi"],["pan","Punjabi"],["guj","Gujarati"],["ori","Odia"],["urd","Urdu"],["asm","Assamese"],["spa","Spanish"],["fra","French"],["deu","German"],["ita","Italian"],["por","Portuguese"],["rus","Russian"],["ara","Arabic"],["tur","Turkish"],["fas","Persian"],["jpn","Japanese"],["kor","Korean"],["zho","Chinese"],["ind","Indonesian"],["msa","Malay"],["tha","Thai"],["vie","Vietnamese"],["nld","Dutch"],["pol","Polish"],["ukr","Ukrainian"],["heb","Hebrew"]];
@@ -1634,11 +1728,76 @@ function setMeta(ch,viaProxy){
    - hides native seek bar and most actions; keeps a minimal bar
    - persisted in localStorage; zap respects prefers-reduced-motion
    ============================================================ */
-var crtOn=false,crtZapTimer=null;
+var crtOn=false,crtZapTimer=null,crtOsdTimer=null;
 function crtReduced(){try{return matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){return false;}}
+function crtNum(ch){
+  if(!ch)return '';
+  var i=filtered.indexOf(ch);
+  if(i<0)i=allChannels.indexOf(ch);
+  return i<0?'':('00'+(i+1)).slice(-3);
+}
+function showCrtOsd(main,sub,ms){
+  if(!crtOn)return;
+  var el=$('crtOsd');if(!el)return;
+  el.innerHTML='<b>'+esc(main)+'</b>'+(sub?'<small>'+esc(sub)+'</small>':'');
+  el.classList.add('on');
+  clearTimeout(crtOsdTimer);
+  crtOsdTimer=setTimeout(function(){el.classList.remove('on');},ms||2200);
+}
+function updateCrtChyron(){
+  var el=$('crtChyron');if(!el)return;
+  if(!crtOn||view!=='watch'||!currentChannel){el.hidden=true;return;}
+  el.textContent='CH '+(crtNum(currentChannel)||'---')+' · '+currentChannel.name;
+  el.hidden=false;
+}
+function crtVolume(delta){
+  if(video.muted)video.muted=false;
+  video.volume=Math.max(0,Math.min(1,Math.round((video.volume+(delta||0))*100)/100));
+  showCrtOsd('Vol '+Math.round(video.volume*100)+'%','',1500);
+}
+function crtToggleMute(){
+  video.muted=!video.muted;
+  showCrtOsd(video.muted?'Mute':'Vol '+Math.round(video.volume*100)+'%','',1500);
+}
+function closeCrtGuide(){var g=$('crtGuide');if(g)g.hidden=true;}
+function closeCrtInfo(){var el=$('crtInfo');if(el)el.hidden=true;}
+function openCrtGuide(){
+  if(!crtOn)return;
+  var g=$('crtGuide'),list=$('crtGuideList');if(!g||!list)return;
+  closeCrtInfo();
+  var h='';
+  for(var i=0;i<filtered.length;i++){
+    var ch=filtered[i],on=ch===currentChannel;
+    h+='<button class="cg-row'+(on?' on':'')+'" type="button" data-i="'+i+'" role="option" aria-selected="'+(on?'true':'false')+'">'+
+      '<span class="cg-num">'+('00'+(i+1)).slice(-3)+'</span><span class="cg-name">'+esc(ch.name)+'</span>'+
+      (ch.group?'<span class="cg-grp">'+esc(ch.group)+'</span>':'')+'</button>';
+  }
+  list.innerHTML=h||'<div class="cg-empty">No channels in this list.</div>';
+  g.hidden=false;
+  var cur=list.querySelector('.cg-row.on');
+  if(cur){
+    list.scrollTop=Math.max(0,cur.offsetTop-list.clientHeight/2);
+    try{cur.focus({preventScroll:true});}catch(e){}
+  }
+}
+function openCrtInfo(){
+  if(!currentChannel)return toast('Pick a channel first');
+  var ch=currentChannel,e=epgForChannel(ch),h='';
+  closeCrtGuide();
+  $('crtInfoCh').textContent='CH '+(crtNum(ch)||'---')+' · '+(ch.group||'Live');
+  $('crtInfoName').textContent=ch.name;
+  $('crtInfoMeta').textContent=[ch.group,ch.tvgId].filter(Boolean).join(' · ');
+  if(e&&e.now)h+='<div>▶ '+esc(e.now.title)+(e.now.stop?' <small>till '+fmtT(e.now.stop)+'</small>':'')+'</div>';
+  if(e&&e.next)h+='<div>⏭ '+esc(e.next.title)+' <small>'+fmtT(e.next.start)+'</small></div>';
+  if(!h)h='<div>No guide data for this channel.</div>';
+  h+='<div class="ci-url">'+esc(ch.url)+'</div>';
+  $('crtInfoEpg').innerHTML=h;
+  $('crtInfo').hidden=false;
+}
+function toggleCrtInfo(){var el=$('crtInfo');if(!el)return;if(el.hidden)openCrtInfo();else el.hidden=true;}
 function syncCrtControls(){
-  var v=$('crtVol');if(v)v.value=video.muted?0:video.volume;
-  var m=$('crtMute');if(m)m.textContent=video.muted?'🔇':'🔊';
+  var m=$('crtMute');
+  if(m){m.classList.toggle('muted',!!video.muted);m.setAttribute('aria-pressed',video.muted?'true':'false');}
 }
 function applyCrt(on,opts){
   crtOn=!!on;
@@ -1646,12 +1805,18 @@ function applyCrt(on,opts){
   try{video.controls=!crtOn;}catch(e){} // hides the native seek/progress bar in CRT mode
   var b=$('crtBtn');if(b)b.classList.toggle('on',crtOn);
   var bar=$('crtActions');if(bar)bar.hidden=!crtOn;
+  if(!crtOn){
+    closeCrtGuide();closeCrtInfo();
+    var o=$('crtOsd');if(o)o.classList.remove('on');
+  }
   if(!opts||!opts.silent){
     sset('tuner_crt',crtOn?'1':'0');
     toast(crtOn?'CRT Mode on — scanlines engaged':'CRT Mode off');
     announce(crtOn?'CRT Mode on':'CRT Mode off');
+    if(crtOn)showCrtOsd('CRT','scanlines on',1600);
   }
   syncCrtControls();
+  updateCrtChyron();
 }
 function crtZap(){
   if(!crtOn||crtReduced())return; // reduced motion: static scanlines, no zap
@@ -1796,9 +1961,9 @@ function connectRemote(){
 function handleRemoteCommand(action){
   if(action==='chup')step(1);
   else if(action==='chdown')step(-1);
-  else if(action==='volup')video.volume=Math.min(1,Math.round((video.volume+0.1)*100)/100);
-  else if(action==='voldown')video.volume=Math.max(0,Math.round((video.volume-0.1)*100)/100);
-  else if(action==='mute')video.muted=!video.muted;
+  else if(action==='volup')crtVolume(0.1);
+  else if(action==='voldown')crtVolume(-0.1);
+  else if(action==='mute')crtToggleMute();
   else if(action==='power')powerToggle();
   else return;
   pushRemoteState();
@@ -1844,6 +2009,7 @@ function playChannel(ch,forceProxy){
   $('currentName').textContent=ch.name;
   renderLogo(ch);
   setMeta(ch,useProxy);
+  if(crtOn){closeCrtGuide();closeCrtInfo();showCrtOsd('CH '+(crtNum(ch)||'---'),ch.name,2600);updateCrtChyron();}
   $('livePill').hidden=false;
   updateFavBtn();
   addRecent(ch.url);
@@ -1910,13 +2076,14 @@ $('retryBtn').onclick=$('proxyBtn').onclick=function(){
   if(!getProxyPrefix()){toast('Choose a proxy in Settings');openSettings();return;}
   playChannel(currentChannel,true);
 };
-$('fsBtn').onclick=function(){
+function toggleFullscreen(){
   try{
     if(video.webkitEnterFullscreen&&!videoWrap.requestFullscreen){video.webkitEnterFullscreen();return;}
     if(document.fullscreenElement)document.exitFullscreen();
     else(videoWrap.requestFullscreen||videoWrap.webkitRequestFullscreen).call(videoWrap);
   }catch(e){toast('Fullscreen unavailable');}
-};
+}
+$('fsBtn').onclick=toggleFullscreen;
 if(document.pictureInPictureEnabled){
   $('pipBtn').hidden=false;
   $('pipBtn').onclick=function(){
@@ -1939,7 +2106,7 @@ function fallbackCopy(text,msg){
     toast(msg);t.remove();
   }catch(e){toast('Copy failed');}
 }
-$('copyBtn').onclick=function(){
+function shareCurrent(){
   if(!currentUrl||!currentChannel)return;
   var link='';
   try{link=location.origin+location.pathname+'#ch='+b64u(currentUrl);}catch(e){}
@@ -1951,7 +2118,8 @@ $('copyBtn').onclick=function(){
   }
   if(link)copyText(link,'Share link copied — opens Tuner on this channel');
   else copyText(currentUrl,'Stream URL copied');
-};
+}
+$('copyBtn').onclick=shareCurrent;
 $('descUrl').onclick=function(){if(currentUrl)copyText(currentUrl,'Raw stream URL copied');};
 $('statsBtn').onclick=function(){toggleStats();};
 $('helpAct').onclick=openHelp;
@@ -2240,6 +2408,7 @@ function showView(v){
   }
   syncHash();
   pushRemoteState();
+  updateCrtChyron();
 }
 function setTab(t,goHome){
   tab=t;group='';
@@ -2610,6 +2779,8 @@ document.addEventListener('keydown',function(e){
   if(e.ctrlKey||e.metaKey||e.altKey)return;
   if(e.key==='Escape'){
     if(anyDialogOpen())return;
+    var cg=$('crtGuide');if(cg&&!cg.hidden){cg.hidden=true;return;}
+    var ci=$('crtInfo');if(ci&&!ci.hidden){ci.hidden=true;return;}
     if(drawer.classList.contains('open')){closeDrawer(true);return;}
     if(view==='watch'||view==='guide'){showView('home');return;}
     if(document.activeElement===searchEl)searchEl.blur();
@@ -2627,10 +2798,11 @@ document.addEventListener('keydown',function(e){
   if(k==='n'||k==='N')step(1);
   else if(k==='p'||k==='P')step(-1);
   else if((k==='f'||k==='F')&&currentUrl)toggleFav(currentUrl);
-  else if(k==='m'||k==='M')video.muted=!video.muted;
+  else if(k==='m'||k==='M')crtToggleMute();
   else if(k==='g'||k==='G')openGuide();
   else if(k==='s'||k==='S')toggleStats();
   else if(k==='c'||k==='C')applyCrt(!crtOn);
+  else if((k==='i'||k==='I')&&crtOn)toggleCrtInfo();
   else if(k==='?'||(k==='/'&&e.shiftKey))openHelp();
   else if(k===' '&&tag!=='BUTTON'){e.preventDefault();video.paused?video.play().catch(function(){}):video.pause();}
 });
@@ -2665,9 +2837,27 @@ try{
 applyCrt(sget('tuner_crt')==='1',{silent:true});
 $('crtBtn').onclick=function(){applyCrt(!crtOn);};
 $('crtExit').onclick=function(){applyCrt(false);};
-$('crtMute').onclick=function(){video.muted=!video.muted;};
-$('crtVol').oninput=function(){video.volume=Math.max(0,Math.min(1,parseFloat(this.value)||0));};
+$('crtChDown').onclick=function(){step(-1);};
+$('crtChUp').onclick=function(){step(1);};
+$('crtChannels').onclick=openCrtGuide;
+$('crtVolDown').onclick=function(){crtVolume(-0.1);};
+$('crtVolUp').onclick=function(){crtVolume(0.1);};
+$('crtMute').onclick=crtToggleMute;
+$('crtInfo').onclick=toggleCrtInfo;
+$('crtInfoX').onclick=closeCrtInfo;
+$('crtShare').onclick=shareCurrent;
+$('crtFull').onclick=toggleFullscreen;
+$('crtRemote').onclick=openRemote;
 $('crtPower').onclick=powerToggle;
+$('crtGuideX').onclick=closeCrtGuide;
+$('crtGuideList').onclick=function(e){
+  var b=e.target&&e.target.closest?e.target.closest('.cg-row'):null;
+  if(!b)return;
+  var i=parseInt(b.getAttribute('data-i'),10);
+  if(isNaN(i))return;
+  closeCrtGuide();
+  playIndex(i,true);
+};
 $('remoteBtn').onclick=openRemote;
 $('drawerRemote').onclick=function(){closeDrawer(true);openRemote();};
 $('rmClose').onclick=closeRemoteDlg;

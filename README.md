@@ -21,11 +21,16 @@ streams when pointed at a VPS in the right country.
 ## CRT Mode
 
 Nostalgia mode: TV bezel, scanlines, film grain, vignette, and an analog zap on
-channel change.
+channel change — plus a full old-TV front panel.
 
-- Toggle: **📺 CRT Mode** on the watch screen, the **C** key, or `CRT off` in the CRT bar.
-- While on, the native seek bar and most actions are hidden; you get channel name,
-  volume, mute, power and CRT-off only.
+- Toggle: **📺 CRT Mode** on the watch screen, the **C** key, or `CRT off` in the panel.
+- Front panel (overlays the bottom of the picture on desktop, sits below it on phones):
+  **CH − / CH +** tune channels, **Channels** opens a retro channel guide,
+  **Vol − / Vol + / Mute** control sound, **Info** shows channel + guide details (`I` key),
+  **Share**, **Fullscreen**, **Remote** (phone pairing), **Power**, **CRT off**.
+- On-screen display: tuning shows `CH 003` + channel name; volume/mute show `VOL 65%` / `MUTE`.
+- A persistent channel banner (chyron) stays at the top of the picture, like a real TV.
+- The native seek bar and normal action bar are hidden while CRT Mode is on.
 - The preference is saved in `localStorage` (`tuner_crt`).
 - `prefers-reduced-motion: reduce` keeps the static scanlines but disables the zap
   animation (CSS + JS both respect it).
