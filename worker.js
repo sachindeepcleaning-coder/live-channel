@@ -195,13 +195,8 @@ export default {
     const referer = req.headers.get('Referer') || '';
     const token = req.headers.get('X-Proxy-Token') || urlObj.searchParams.get('token') || '';
 
-    if (req.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: corsHeaders(origin, true) });
-    }
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      return new Response('Only GET/HEAD', { status: 405, headers: corsHeaders(origin, true) });
-    }
-
+    // Decide the allowlist once, so preflight replies agree with the real
+    // request instead of echoing an arbitrary origin.
     let refOrigin = '';
     try {
       refOrigin = referer ? new URL(referer).origin : '';
@@ -214,6 +209,13 @@ export default {
       CONFIG.ALLOWED_ORIGINS.includes(origin) ||
       (refOrigin && CONFIG.ALLOWED_ORIGINS.includes(refOrigin));
     const cors = corsHeaders(origin, !!allowed);
+
+    if (req.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: cors });
+    }
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      return new Response('Only GET/HEAD', { status: 405, headers: cors });
+    }
     if (!allowed) {
       return new Response('Origin not allowed — set ALLOWED_ORIGINS in the worker', { status: 403, headers: cors });
     }

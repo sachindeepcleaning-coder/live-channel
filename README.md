@@ -69,6 +69,9 @@ v1+v2 schemes, minSdk 21). If installation fails:
 2. Delete a previously installed Tuner if the package conflicts
    (`adb uninstall com.tuner.app`).
 3. Install from the notification or a file manager rather than an in-browser viewer.
-4. Rebuild with `cd android && gradle assembleRelease` (needs JDK 17 + Android SDK 34;
-   signing credentials live in `android/keystore.properties`, kept out of git —
-   back up `android/keystore/tuner-release.jks`, future updates need the same key).
+4. Rebuild with `cd android && ./gradlew assembleRelease` (needs JDK 17 + Android SDK 34;
+   the Gradle wrapper is committed, so no global Gradle install is needed). Signing
+   credentials live in `android/keystore.properties`, kept out of git — restore it and
+   `android/keystore/tuner-release.jks` from your backup, future updates need the same key
+   or users cannot update in place. Without them the release build fails fast with an
+   explanatory error; `./gradlew assembleDebug` builds a debuggable APK for testing.

@@ -1,9 +1,21 @@
-/* Tuner offline shell v3 — network-first navigations, stale-while-revalidate
+/* Tuner offline shell v4 — network-first navigations, stale-while-revalidate
    for the precached shell only. Playlists, EPG, manifests, segments and
-   anything cross-origin always go straight to the network. */
-const CACHE = 'tuner-shell-v6';
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png', './hls.min.js', './qrcode.js'];
-const SHELL_PATHS = new Set(['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/hls.min.js', '/qrcode.js']);
+   anything cross-origin always go straight to the network.
+   Shell paths are resolved against the worker's own base URL so the cache
+   actually serves them under any base path (e.g. /live-channel/). */
+const CACHE = 'tuner-shell-v7';
+const BASE = new URL('./', self.location.href);
+const SHELL = [
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './icon.svg',
+  './icon-192.png',
+  './icon-512.png',
+  './hls.min.js',
+  './qrcode.js',
+].map((p) => new URL(p, BASE).href);
+const SHELL_PATHS = new Set(SHELL.map((u) => new URL(u).pathname));
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
