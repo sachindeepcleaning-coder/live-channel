@@ -18,6 +18,23 @@ Open <http://127.0.0.1:8000/index.html>. In Setup choose a playlist (India loads
 default), or open a local `.m3u`. The proxy is optional — it unlocks geo-blocked/CORS
 streams when pointed at a VPS in the right country.
 
+## Only-working filter (no proxy)
+
+Tuner checks every channel for you and can hide the ones that need a proxy or are dead.
+
+- The check runs automatically when a playlist loads: each stream URL is fetched
+  **straight from the browser** (manifest → variant → first segment), so CORS, TLS,
+  geo-blocks and dead files are detected. No proxy is involved in the test.
+- The home screen shows a status bar: `61 of 67 channels play without a proxy`.
+- **✔ Only working** (on the same bar, and in *Sources & proxy*) hides every channel
+  that did not pass the check — the list then contains only streams that play directly.
+- **Check again** re-tests everything; **Stop** halts a running check.
+- Results are cached in `localStorage` (`iptv_scan_v1`): working channels stay known
+  for 7 days, failures are retried after 24 hours, so the list is ready instantly on
+  the next visit.
+- Channels you play successfully are also marked as working, and a direct-play failure
+  un-marks the channel immediately.
+
 ## CRT Mode
 
 Nostalgia mode: TV bezel, scanlines, film grain, vignette, and an analog zap on

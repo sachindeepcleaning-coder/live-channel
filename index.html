@@ -101,6 +101,13 @@ button{cursor:pointer}
 .geo-banner .btn{min-height:36px;padding:6px 14px;font-size:13px}
 .geo-banner .icon-btn{width:32px;height:32px;font-size:14px}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:22px}
+.scan-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin:0 0 20px;font-size:13px;color:var(--muted)}
+.scan-bar[hidden]{display:none}
+.scan-bar .scan-ico{font-size:15px;line-height:1}
+.scan-bar .scan-text{flex:1;min-width:170px;color:var(--text);font-size:13px}
+.scan-bar .scan-text b{color:var(--good);font-variant-numeric:tabular-nums}
+.scan-bar .mini-btn[aria-pressed="true"]{border-color:var(--accent);color:var(--text);background:var(--accent-dim,#1d2b3a)}
+.scan-bar .mini-btn:disabled{opacity:.5}
 .stat{background:linear-gradient(180deg,var(--surface2),var(--surface));border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;position:relative;overflow:hidden}
 .stat::after{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent);opacity:.85}
 .stat:nth-child(2)::after{background:var(--blue)}
@@ -468,6 +475,12 @@ body.crt #remoteDlg input{background:#0b1108;border-color:#2e4527;color:#d8ffc2}
         <div class="stat"><b id="statFavs">–</b><span>favorites</span></div>
         <div class="stat"><b id="statFailed">–</b><span>offline this session</span></div>
       </div>
+      <div class="scan-bar" id="scanBar" hidden>
+        <span class="scan-ico" aria-hidden="true">📶</span>
+        <span class="scan-text" id="scanText">Checking channels…</span>
+        <button class="mini-btn" id="scanToggle" type="button" aria-pressed="false">Only working</button>
+        <button class="mini-btn" id="scanBtn" type="button">Check</button>
+      </div>
       <div id="railWrap">
         <div class="rail-head"><h3>🕘 Continue watching</h3><button class="mini-btn" id="clearRecent">Clear</button></div>
         <div class="rail" id="rail"></div>
@@ -673,6 +686,7 @@ body.crt #remoteDlg input{background:#0b1108;border-color:#2e4527;color:#d8ffc2}
     <label class="switch"><span>Show channels that failed this session</span><input type="checkbox" id="showFailed" /></label>
     <label class="switch"><span>Auto-skip to next channel on failure</span><input type="checkbox" id="autoSkip" /></label>
     <label class="switch"><span>Show adult (18+) channels</span><input type="checkbox" id="showAdult" /></label>
+    <label class="switch"><span>Show only channels that work directly (auto-checked)</span><input type="checkbox" id="showDirectOnly" /></label>
     <div class="field">
       <label>Favorites backup</label>
       <div class="row">
@@ -793,20 +807,23 @@ var $=function(id){return document.getElementById(id);};
 var video=$('video'),videoWrap=$('videoWrap'),listWrap=$('listWrap'),listSpacer=$('listSpacer'),emptyMsg=$('emptyMsg');
 var searchEl=$('search'),searchBox=$('searchBox'),chipsEl=$('chips'),countsEl=$('counts'),failedInfo=$('failedInfo');
 var urlInput=$('urlInput'),countrySelect=$('countrySelect'),langSelect=$('langSelect'),proxySelect=$('proxySelect'),proxyCustom=$('proxyCustom'),epgInput=$('epgInput');
-var autoProxyEl=$('autoProxy'),showFailedEl=$('showFailed'),autoSkipEl=$('autoSkip'),showAdultEl=$('showAdult');
+var autoProxyEl=$('autoProxy'),showFailedEl=$('showFailed'),autoSkipEl=$('autoSkip'),showAdultEl=$('showAdult'),showDirectOnlyEl=$('showDirectOnly');
 var settings=$('settings'),welcome=$('welcome'),helpDlg=$('help');
 var homeView=$('homeView'),watchView=$('watchView'),guideView=$('guideView'),drawer=$('drawer'),scrim=$('scrim');
 var grid=$('grid'),rail=$('rail'),railWrap=$('railWrap'),moreBtn=$('moreBtn'),homeEmpty=$('homeEmpty');
 var toastEl=$('toast'),toastMsg=$('toastMsg'),toastAct=$('toastAct');
 var guideGrid=$('guideGrid'),guideScroll=$('guideScroll');
 
-var allChannels=[],filtered=[],failedSet=new Set(),favSet=new Set(),recent=[],chanByUrl={};
+var allChannels=[],filtered=[],failedSet=new Set(),directWorksSet=new Set(),directFailSet=new Set(),favSet=new Set(),recent=[],chanByUrl={};
 var group='',tab='all',view='home',gridShown=0,listGen=0,lastWin='',pendingFocusIdx=null,chipsSig='';
 var epgMap={},epgIdsByName={},epgCount=0;
 var currentChannel=null,currentUrl=null,hls=null,raf=null,nativeBlobUrl=null;
 var attemptSeq=0,currentAttempt=0,autoProxyTimer=null,teardownTs=0;
 var triedPrefixes=[],usedPrefix='';
 var pendingQ='auto',searchDebT=null,loadToken=0,epgToken=0;
+var SCAN_KEY='iptv_scan_v1',SCAN_OK_TTL=7*24*3600*1000,SCAN_FAIL_TTL=24*3600*1000,SCAN_CONC=6,SCAN_REQ_MS=6000;
+var scanOkTs={},scanFailTs={};
+var scanState={running:false,stop:false,token:0,queue:[],active:0,done:0,ok:0,total:0,refilterT:null};
 var sleepEndTs=0,sleepTimer=null,sleepTick=null;
 var guideShiftMs=0,guideRows=[];
 var statsVisible=false,statsTimer=null;
@@ -848,6 +865,9 @@ try{recent=JSON.parse(sget('iptv_recent')||'[]');if(!Array.isArray(recent))recen
 showFailedEl.checked=sget('iptv_showFailed')==='1';
 showAdultEl.checked=sget('iptv_showAdult')==='1';
 autoSkipEl.checked=sget('iptv_autoskip')==='1';
+var _sdSaved=sget('iptv_showDirectOnly');
+showDirectOnlyEl.checked=(_sdSaved===null)?true:(_sdSaved==='1');
+loadScanCache();
 var _sp=sget('iptv_proxy');
 if(_sp==='corsproxy'){proxySelect.value='allorigins';sset('iptv_proxy','allorigins');}
 else if(_sp)proxySelect.value=_sp;
@@ -954,12 +974,13 @@ function baseSet(){
   return allChannels;
 }
 function eligibleBase(){
-  var sf=showFailedEl.checked,sa=showAdultEl.checked,out=[],i;
+  var sf=showFailedEl.checked,sa=showAdultEl.checked,sd=showDirectOnlyEl.checked,out=[],i;
   var base=baseSet();
   for(i=0;i<base.length;i++){
     var c=base[i];
     if(c.adult&&!sa)continue;
     if(!sf&&failedSet.has(c.url))continue;
+    if(sd&&!directWorksSet.has(c.url))continue;
     out.push(c);
   }
   return out;
@@ -1013,7 +1034,11 @@ function applyFilters(reset){
 function updateEmpty(){
   var msg='';
   if(allChannels.length&&!filtered.length){
-    if(tab==='fav')msg='⭐ No favorites yet.<br>Tap the star on any channel.';
+    if(showDirectOnlyEl.checked&&!directOkCount()&&scanState.running)
+      msg='📡 Checking channels… only channels that play without a proxy will show up here.';
+    else if(showDirectOnlyEl.checked&&!directOkCount())
+      msg='No channels play without a proxy.<br>Turn off “Only working” to see every channel.';
+    else if(tab==='fav')msg='⭐ No favorites yet.<br>Tap the star on any channel.';
     else if(tab==='recent')msg='🕘 Nothing watched yet.';
     else if(searchEl.value.trim())msg='No channels match “'+esc(searchEl.value.trim())+'”.';
     else msg='No channels match this category.';
@@ -1022,6 +1047,270 @@ function updateEmpty(){
   if(msg)emptyMsg.innerHTML=msg;
   homeEmpty.hidden=!(msg&&allChannels.length);
   if(msg&&allChannels.length)homeEmpty.innerHTML=msg;
+}
+
+/* ---------- direct-playback scanner ----------
+   Tests every channel URL straight from the browser (no proxy) so the list can
+   show only the ones that really play: manifest + variant + first segment. */
+function loadScanCache(){
+  var now=Date.now(),i,u;
+  scanOkTs={};scanFailTs={};
+  directWorksSet.clear();directFailSet.clear();
+  var obj=null;
+  try{obj=JSON.parse(sget(SCAN_KEY)||'null');}catch(e){}
+  if(obj&&typeof obj==='object'){
+    var ok=obj.ok||{},fail=obj.fail||{};
+    for(u in ok)if(ok.hasOwnProperty(u)&&now-ok[u]<SCAN_OK_TTL)scanOkTs[u]=ok[u];
+    for(u in fail)if(fail.hasOwnProperty(u)&&now-fail[u]<SCAN_FAIL_TTL)scanFailTs[u]=fail[u];
+  }else{
+    try{
+      var legacy=JSON.parse(sget('iptv_directWorks')||'[]');
+      for(i=0;i<legacy.length;i++)if(legacy[i])scanOkTs[legacy[i]]=now;
+    }catch(e){}
+  }
+  for(u in scanOkTs)directWorksSet.add(u);
+  for(u in scanFailTs)directFailSet.add(u);
+}
+function saveScanCache(){
+  var now=Date.now(),ok={},fail={},u;
+  for(u in scanOkTs)if(now-scanOkTs[u]<SCAN_OK_TTL)ok[u]=scanOkTs[u];
+  for(u in scanFailTs)if(now-scanFailTs[u]<SCAN_FAIL_TTL)fail[u]=scanFailTs[u];
+  sset(SCAN_KEY,JSON.stringify({ok:ok,fail:fail}));
+}
+function markDirectOk(url){
+  if(!url)return;
+  scanOkTs[url]=Date.now();
+  delete scanFailTs[url];
+  directWorksSet.add(url);
+  directFailSet.delete(url);
+  saveScanCache();
+  scanUI();
+  if(showDirectOnlyEl.checked)scheduleScanRefilter();
+}
+function directOkCount(){
+  var n=0,i;
+  for(i=0;i<allChannels.length;i++)if(directWorksSet.has(allChannels[i].url))n++;
+  return n;
+}
+function markDirectFail(url){
+  if(!url||!directWorksSet.has(url))return;
+  delete scanOkTs[url];
+  scanFailTs[url]=Date.now();
+  directWorksSet.delete(url);
+  directFailSet.add(url);
+  saveScanCache();
+  scanUI();
+  if(showDirectOnlyEl.checked)scheduleScanRefilter();
+}
+function probeFetchText(url,ms){
+  return new Promise(function(resolve,reject){
+    var ctrl=null;
+    try{if(typeof AbortController!=='undefined')ctrl=new AbortController();}catch(e){}
+    var fin=false,t=setTimeout(function(){
+      if(fin)return;fin=true;
+      try{if(ctrl)ctrl.abort();}catch(e){}
+      reject(new Error('timeout'));
+    },ms);
+    fetch(url,{signal:ctrl?ctrl.signal:undefined,cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer'}).then(function(r){
+      if(fin)return;
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      return r.text();
+    }).then(function(txt){
+      if(fin)return;fin=true;clearTimeout(t);resolve(txt);
+    },function(e){
+      if(fin)return;fin=true;clearTimeout(t);reject(e);
+    });
+  });
+}
+function probeSegment(url,ms){
+  return new Promise(function(resolve){
+    var ctrl=null;
+    try{if(typeof AbortController!=='undefined')ctrl=new AbortController();}catch(e){}
+    var fin=false;
+    function done(ok){
+      if(fin)return;fin=true;clearTimeout(t);
+      try{if(ctrl)ctrl.abort();}catch(e){}
+      resolve(ok);
+    }
+    var t=setTimeout(function(){done(false);},ms);
+    fetch(url,{signal:ctrl?ctrl.signal:undefined,cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer'}).then(function(r){
+      if(fin)return;
+      if(!r.ok){done(false);return;}
+      if(!r.body||!r.body.getReader){done(true);return;}
+      var rd=r.body.getReader();
+      rd.read().then(function(){try{rd.cancel().catch(function(){});}catch(e){}done(true);},function(){done(false);});
+    },function(){done(false);});
+  });
+}
+function manifestInfo(text,base){
+  var lines=text.split(/\r?\n/),seg=null,map=null,media=false,i;
+  for(i=0;i<lines.length;i++){
+    var line=(lines[i]||'').trim();
+    if(!line)continue;
+    if(line.indexOf('#EXT-X-STREAM-INF')===0){
+      for(var j=i+1;j<lines.length;j++){
+        var v=(lines[j]||'').trim();
+        if(v&&v.charAt(0)!=='#')return {variant:resolveUrl(v,base)};
+      }
+    }
+    if(line.indexOf('#EXT-X-MAP')===0){
+      var m=/URI="([^"]+)"/.exec(line);
+      if(m)map=resolveUrl(m[1],base);
+    }
+    if(line.indexOf('#EXTINF')===0||line.indexOf('#EXT-X-TARGETDURATION')===0)media=true;
+    if(line.charAt(0)!=='#')seg=resolveUrl(line,base);
+  }
+  if(media&&seg)return {segment:seg};
+  if(media&&map)return {segment:map};
+  return {};
+}
+function probeHlsManifest(url,ms,depth){
+  depth=depth||0;
+  return probeFetchText(url,ms).then(function(text){
+    if(text.indexOf('#EXTM3U')<0)return false;
+    var info=manifestInfo(text,url);
+    if(info.variant){
+      if(depth>=2)return true;
+      return probeHlsManifest(info.variant,ms,depth+1);
+    }
+    if(info.segment)return probeSegment(info.segment,ms);
+    return false;
+  },function(){return false;});
+}
+function probeVideoMeta(url,ms){
+  return new Promise(function(resolve){
+    var v=document.createElement('video'),fin=false;
+    function done(ok){
+      if(fin)return;fin=true;clearTimeout(t);
+      try{v.removeAttribute('src');v.load();}catch(e){}
+      resolve(ok);
+    }
+    var t=setTimeout(function(){done(false);},ms);
+    v.muted=true;v.preload='metadata';v.playsInline=true;
+    v.addEventListener('loadedmetadata',function(){done(true);});
+    v.addEventListener('error',function(){done(false);});
+    try{v.src=url;}catch(e){done(false);}
+  });
+}
+function probeChannelDirect(url,ms){
+  if(!url)return Promise.resolve(false);
+  if(location.protocol==='https:'&&/^http:\/\//i.test(url))return Promise.resolve(false);
+  if(isHls(url)&&window.Hls&&Hls.isSupported())return probeHlsManifest(url,ms,0);
+  return probeVideoMeta(url,ms);
+}
+function scanPendingCount(){
+  var n=0,i,u;
+  for(i=0;i<allChannels.length;i++){u=allChannels[i].url;if(!scanOkTs[u]&&!scanFailTs[u])n++;}
+  return n;
+}
+function scheduleScanRefilter(){
+  if(scanState.refilterT)return;
+  scanState.refilterT=setTimeout(function(){
+    scanState.refilterT=null;
+    if(showDirectOnlyEl.checked)applyFilters(false);
+  },1500);
+}
+function scanUI(){
+  var bar=$('scanBar');
+  if(!bar)return;
+  if(!allChannels.length){bar.hidden=true;return;}
+  bar.hidden=false;
+  var pending=scanPendingCount(),ok=directOkCount(),txt;
+  if(scanState.running){
+    txt='Checking direct playback… '+scanState.done+'/'+scanState.total+' · <b>'+ok+'</b> work without a proxy';
+  }else if(pending&&!ok){
+    txt='<b>'+allChannels.length+'</b> channels waiting for a direct-playback check.';
+  }else{
+    txt='<b>'+ok+'</b> of '+allChannels.length+' channels play without a proxy';
+    if(pending)txt+=' · '+pending+' not checked yet';
+  }
+  $('scanText').innerHTML=txt;
+  var btn=$('scanBtn');
+  btn.textContent=scanState.running?'Stop':'Check again';
+  var tg=$('scanToggle');
+  tg.setAttribute('aria-pressed',showDirectOnlyEl.checked?'true':'false');
+  tg.textContent=showDirectOnlyEl.checked?'✔ Only working':'Only working';
+}
+function scanResult(tok,ch,ok){
+  if(tok!==scanState.token)return;
+  scanState.active--;scanState.done++;
+  if(ok){
+    scanOkTs[ch.url]=Date.now();
+    delete scanFailTs[ch.url];
+    directWorksSet.add(ch.url);
+    directFailSet.delete(ch.url);
+    scanState.ok++;
+  }else{
+    scanFailTs[ch.url]=Date.now();
+    delete scanOkTs[ch.url];
+    directFailSet.add(ch.url);
+    directWorksSet.delete(ch.url);
+  }
+  if(scanState.done%10===0)saveScanCache();
+  if(ok&&showDirectOnlyEl.checked)scheduleScanRefilter();
+  if(scanState.done%5===0||!scanState.queue.length)scanUI();
+  scanNext(tok);
+}
+function scanNext(tok){
+  if(tok!==scanState.token||scanState.stop)return;
+  while(!scanState.stop&&scanState.active<SCAN_CONC&&scanState.queue.length){
+    (function(ch){
+      scanState.active++;
+      probeChannelDirect(ch.url,SCAN_REQ_MS).then(function(ok){
+        scanResult(tok,ch,!!ok);
+      },function(){
+        scanResult(tok,ch,false);
+      });
+    })(scanState.queue.shift());
+  }
+  if(scanState.active===0&&(!scanState.queue.length||scanState.stop))finishScan(tok);
+}
+function finishScan(tok){
+  if(tok!==scanState.token)return;
+  scanState.running=false;
+  saveScanCache();
+  scanUI();
+  if(showDirectOnlyEl.checked)applyFilters(false);
+}
+function startScan(force){
+  if(!allChannels.length||scanState.running)return;
+  if(force){
+    scanOkTs={};scanFailTs={};
+    directWorksSet.clear();directFailSet.clear();
+    saveScanCache();
+    if(showDirectOnlyEl.checked)applyFilters(false);
+  }
+  var q=[],i,u;
+  for(i=0;i<allChannels.length;i++){
+    u=allChannels[i].url;
+    if(!scanOkTs[u]&&!scanFailTs[u])q.push(allChannels[i]);
+  }
+  if(!q.length){scanUI();return;}
+  var tok=++scanState.token;
+  scanState.running=true;scanState.stop=false;
+  scanState.queue=q;scanState.active=0;scanState.done=0;scanState.ok=0;scanState.total=q.length;
+  scanUI();
+  scanNext(tok);
+}
+function stopScan(){
+  if(!scanState.running)return;
+  scanState.stop=true;
+  scanState.token++;
+  scanState.running=false;
+  saveScanCache();
+  scanUI();
+}
+function maybeAutoScan(){
+  if(scanState.running||!allChannels.length||!showDirectOnlyEl.checked)return;
+  if(!scanPendingCount())return;
+  setTimeout(function(){startScan(false);},600);
+}
+function setDirectOnly(on){
+  showDirectOnlyEl.checked=!!on;
+  sset('iptv_showDirectOnly',on?'1':'0');
+  applyFilters(false);
+  scanUI();
+  if(on)maybeAutoScan();
 }
 function langName(c){for(var i=0;i<FALLBACK_LANGS.length;i++)if(FALLBACK_LANGS[i][0]===c)return FALLBACK_LANGS[i][1];return String(c||'').toUpperCase();}
 function labelFor(url){
@@ -1070,7 +1359,8 @@ function renderRail(){
 function renderHome(reset){
   renderRail();
   if(reset){gridShown=0;homeView.scrollTop=0;}
-  if(gridShown===0)gridShown=Math.min(GRID_PAGE,filtered.length);
+  var page=Math.min(GRID_PAGE,filtered.length);
+  if(gridShown<page)gridShown=page;
   grid.innerHTML=filtered.slice(0,gridShown).map(function(c,i){return cardHTML(c,i,false);}).join('');
   updateGridMeta();
 }
@@ -1340,6 +1630,7 @@ function createHls(playUrl,ch,viaProxy,attempt){
   hls=new Hls(hlsConfig(viaProxy));
   hls.on(Hls.Events.MANIFEST_PARSED,function(){
     if(attempt!==currentAttempt)return;
+    if(!viaProxy)markDirectOk(ch.url);
     buildQualityOptions();
     video.play().catch(function(e){playRejected(e,ch,viaProxy,playUrl,attempt);});
   });
@@ -1402,7 +1693,9 @@ function startNative(playUrl,ch,viaProxy,attempt){
     return;
   }
   video.src=playUrl;
-  video.play().catch(function(e){playRejected(e,ch,viaProxy,playUrl,attempt);});
+  video.play().then(function(){
+    if(!viaProxy)markDirectOk(ch.url);
+  }).catch(function(e){playRejected(e,ch,viaProxy,playUrl,attempt);});
 }
 function startStream(playUrl,ch,viaProxy,attempt){
   setOv('bufferOv',true);
@@ -1436,6 +1729,7 @@ function failoverTo(ch,prefix,msg,attempt){
 function onFatal(ch,detail,viaProxy,playUrl,attempt){
   if(attempt!==currentAttempt||ch!==currentChannel)return;
   stopWatchdog();setOv('bufferOv',false);destroyHls();revokeNative();
+  if(!viaProxy)markDirectFail(ch.url);
   var prefix=usedPrefix||getProxyPrefix();
   if(!viaProxy&&autoProxyEl.checked&&prefix&&triedPrefixes.indexOf(prefix)<0){
     triedPrefixes.push(prefix);usedPrefix=prefix;
@@ -2602,6 +2896,7 @@ function maybeOfferResume(){
 }
 function loadText(text,label,token){
   var parsed=parseM3U(text);
+  stopScan();
   allChannels=parsed.channels;
   buildChanIndex();
   failedSet.clear();
@@ -2625,9 +2920,12 @@ function loadText(text,label,token){
     $('gridMeta').textContent='';
     moreBtn.style.display='none';
     updateCounts();
+    scanUI();
     return parsed;
   }
   applyFilters(true);
+  scanUI();
+  maybeAutoScan();
   toast(allChannels.length+' channels loaded');
   showView('home');
   if(parsed.epgUrl&&!sget('iptv_epg')){
@@ -2662,6 +2960,12 @@ autoProxyEl.addEventListener('change',function(){sset('iptv_autoproxy',autoProxy
 autoSkipEl.addEventListener('change',function(){sset('iptv_autoskip',autoSkipEl.checked?'1':'0');});
 showFailedEl.addEventListener('change',function(){sset('iptv_showFailed',showFailedEl.checked?'1':'0');applyFilters(false);});
 showAdultEl.addEventListener('change',function(){sset('iptv_showAdult',showAdultEl.checked?'1':'0');applyFilters(false);});
+showDirectOnlyEl.addEventListener('change',function(){setDirectOnly(showDirectOnlyEl.checked);});
+$('scanToggle').addEventListener('click',function(){setDirectOnly(!showDirectOnlyEl.checked);});
+$('scanBtn').addEventListener('click',function(){
+  if(scanState.running){stopScan();return;}
+  startScan(true);
+});
 $('favExport').onclick=function(){
   var items=Array.from(favSet).map(function(u){var c=chanByUrl[u];return {url:u,name:c?c.name:u,group:c?c.group:''};});
   var blob=new Blob([JSON.stringify({app:'tuner',version:APP_VERSION,exported:new Date().toISOString(),items:items},null,2)],{type:'application/json'});
