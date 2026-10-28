@@ -66,39 +66,59 @@ const CAT_NAMES = {
 
 /**
  * Public XMLTV guides that are reachable from a browser (CORS enabled) and
- * line up with iptv-org channel names. Checked with `--check-epg`.
+ * line up with iptv-org channel names or ids. `cors:false` means the file can
+ * only be fetched through a proxy (Tuner's own worker/server or any CORS
+ * proxy). The first entry of a country is the one loaded automatically.
  */
-const EPG_PROVIDERS = [
+const EPG_GUIDES = [
   {
     id: 'tvepg-in',
     label: 'Indian channels (tvepg)',
-    countries: { IN: 'https://raw.githubusercontent.com/mitthu786/tvepg/main/epg.xml.gz' }
+    url: 'https://raw.githubusercontent.com/mitthu786/tvepg/main/epg.xml.gz',
+    cors: true,
+    countries: ['IN']
+  },
+  {
+    id: 'jtbs-in',
+    label: 'JTBS Classic (iptv-org worker)',
+    url: 'https://jtbsclassic.dpdns.org/main.epg.xml',
+    cors: true,
+    countries: ['IN']
   },
   {
     id: 'epgtalk-uk',
     label: 'EPGTalk UK',
-    countries: { UK: 'https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/UK_lite.xml.gz' }
+    url: 'https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/UK_lite.xml.gz',
+    cors: true,
+    countries: ['UK']
   },
   {
     id: 'epgtalk-us',
     label: 'EPGTalk US free-to-air',
-    countries: { US: 'https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/FreeTV_guide.xml.gz' }
+    url: 'https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/FreeTV_guide.xml.gz',
+    cors: true,
+    countries: ['US']
+  },
+  {
+    id: 'kanya-us',
+    label: 'iptv-org US workers (exact channel ids — needs a proxy)',
+    url: 'https://epg.kanya.io/us/guide.xml.gz',
+    cors: false,
+    countries: ['US']
   },
   {
     id: 'epgtalk-latino',
     label: 'EPGTalk Latino',
-    countries: {
-      MX: 'https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz',
-      AR: 'https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz',
-      CL: 'https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz',
-      CO: 'https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz',
-      PE: 'https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz',
-      VE: 'https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz',
-      EC: 'https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz',
-      BO: 'https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz',
-      PY: 'https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz',
-      UY: 'https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz'
-    }
+    url: 'https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz',
+    cors: true,
+    countries: ['MX', 'AR', 'CL', 'CO', 'PE', 'VE', 'EC', 'BO', 'PY', 'UY']
+  },
+  {
+    id: 'worker-fr',
+    label: 'iptv-org FR workers',
+    url: 'http://194.163.157.137:8080/iptv/epg.xml',
+    cors: true,
+    countries: ['FR']
   }
 ]
 
@@ -240,7 +260,7 @@ function main() {
     JSON.stringify({ v: 1, updated, countries: index, streams: total })
   )
 
-  const epg = { v: 1, updated, providers: EPG_PROVIDERS }
+  const epg = { v: 1, updated, guides: EPG_GUIDES }
   fs.writeFileSync(path.join(OUT_DIR, 'epg.json'), JSON.stringify(epg, null, 1))
 
   const bytes = index.reduce((n, c) => n + fs.statSync(path.join(OUT_DIR, c.file)).size, 0)

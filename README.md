@@ -79,12 +79,27 @@ result, so the channel lists stay fresh without touching the app.
 
 *Setup → TV guide URL* takes any XMLTV file. On top of that, Tuner can load a
 public guide automatically for the selected country (switch: **Auto-load a
-guide for the selected country**). Providers are listed in `data/epg.json`
-(Indian channels via `tvepg`, UK/US/Latin America via `EPGTalk`); channels are
-matched by XMLTV id and by name, so roughly 60 % of the Indian list and 25 % of
-the UK list get Now/Next information. A guide URL you set yourself always wins
-over the automatic one. Guides over 4 MB are parsed with a regex scanner so a
-12 MB file does not freeze the page.
+guide for the selected country**):
+
+- A **guide picker** appears in Setup listing every public guide known for that
+  country — *Auto* picks the best one, you can choose a specific guide, or
+  *All available guides* to merge several of them for wider coverage.
+- Guides are listed in `data/epg.json`: Indian channels via `tvepg` plus the
+  iptv-org worker for JTBS Classic, UK/US/Latin America via `EPGTalk`, US via
+  the iptv-org workers (exact channel ids, but it needs a proxy), France via an
+  iptv-org worker.
+- Channels are matched by XMLTV id (iptv-org ids look like
+  `ChannelID@feed`), by name, and — when nothing else fits — by the words of
+  the channel name, so `ACC Network` still finds `ACC Digital Network`.
+  Result: **24 % of the Indian list and 18 % of the US list** get Now/Next
+  information.
+- A guide URL you set yourself always wins over the automatic one.
+- Big guides are parsed **while they stream in**, so the 50 MB US guide never
+  exists as one string and the page stays responsive on a phone.
+
+Links that carry a provider access token (`?token=`, `?hdnts=`, …) are called
+out when they fail: those tokens expire, and the channel list is rebuilt every
+night, so a fresh copy of the link fixes it.
 
 ## CRT Mode
 

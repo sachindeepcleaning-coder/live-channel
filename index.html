@@ -690,6 +690,8 @@ body.crt #remoteDlg input{background:#0b1108;border-color:#2e4527;color:#d8ffc2}
       <input id="epgInput" type="text" spellcheck="false" inputmode="url" placeholder="https://example.com/guide.xml" />
       <small id="epgStatus" style="color:var(--muted);font-size:12px">No guide loaded — shows Now/Next on player and cards.</small>
       <label class="switch" style="margin-top:8px"><span>Auto-load a guide for the selected country</span><input type="checkbox" id="autoEpg" checked /></label>
+      <select id="epgPick" style="margin-top:8px;display:none"></select>
+      <small id="epgPickNote" style="color:var(--muted);font-size:12px"></small>
     </div>
     <div class="field">
       <label for="proxySelect">CORS proxy</label>
@@ -836,7 +838,7 @@ var guideGrid=$('guideGrid'),guideScroll=$('guideScroll');
 
 var allChannels=[],filtered=[],failedSet=new Set(),directWorksSet=new Set(),directFailSet=new Set(),favSet=new Set(),recent=[],chanByUrl={};
 var group='',tab='all',view='home',gridShown=0,listGen=0,lastWin='',pendingFocusIdx=null,chipsSig='';
-var epgMap={},epgIdsByName={},epgCount=0;
+var epgMap={},epgIdsByName={},epgCount=0,epgTokenIndex={},epgTokenCount={};
 var currentChannel=null,currentUrl=null,hls=null,raf=null,nativeBlobUrl=null;
 var attemptSeq=0,currentAttempt=0,autoProxyTimer=null,teardownTs=0;
 var triedPrefixes=[],usedPrefix='';
@@ -1790,8 +1792,9 @@ function onFatal(ch,detail,viaProxy,playUrl,attempt){
 }
 function classifyFailure(ch,base){
   var d=$('errorDetail');
+  var tokenized=/[?&](token|hdnts|wmsAuthSign|sign|auth)=/i.test(ch.url||'');
   var prefix=getProxyPrefix();
-  if(!prefix){d.textContent=base+' · Tip: choose a proxy in Setup to auto-diagnose geo-block vs dead link.';return;}
+  if(!prefix){d.textContent=base+(tokenized?' · This link carries a provider access token that expires — the channel list is rebuilt every night, so try again tomorrow.':' · Tip: choose a proxy in Setup to auto-diagnose geo-block vs dead link.');return;}
   d.textContent=base+' · Checking why…';
   var probe=usedPrefix||prefix,done=false;
   var finish=function(txt){if(done)return;done=true;if(ch===currentChannel)d.textContent=base+' · '+txt;};
@@ -1800,8 +1803,8 @@ function classifyFailure(ch,base){
     clearTimeout(timer);
     var st=r.status;
     try{if(r.body&&r.body.cancel)r.body.cancel();}catch(e){}
-    if(st===403||st===451)finish('Server refused ('+st+') — likely geo-block or hotlink protection. Fix: VPN or an in-country proxy in Setup.');
-    else if(st===404||st===410)finish('Not found ('+st+') — this link is dead. Try Next ⏭.');
+    if(st===403||st===451)finish('Server refused ('+st+') — likely geo-block or hotlink protection.'+(tokenized?' The provider token may have expired.':' ')+' Fix: VPN or an in-country proxy in Setup.');
+    else if(st===404||st===410)finish('Not found ('+st+') — this link is dead.'+(tokenized?' Its access token has probably expired; the list refreshes nightly.':'')+' Try Next ⏭.');
     else if(st>=500)finish('Source server error ('+st+') — try again later or Next.');
     else finish('HTTP '+st+' — try Next or another channel.');
   }).catch(function(){
@@ -2523,46 +2526,61 @@ function normName(s){
     .replace(/[^a-z0-9\u0900-\u097f]+/g,' ')
     .replace(/\s+/g,' ').trim();
 }
-function loadEPG(url,silent,auto){
+function loadEPG(url,silent,auto,merge){
   var token=++epgToken;
   var st=$('epgStatus');
   if(!url){
-    epgMap={};epgIdsByName={};epgCount=0;
+    epgMap={};epgIdsByName={};epgCount=0;epgTokenIndex={};epgTokenCount={};
     if(st)st.textContent='No guide loaded — Now/Next appears on the player and cards when you add one.';
     lastWin='';renderEpgBox(currentChannel);renderHome(false);renderGuide();
-    return;
+    return Promise.resolve(false);
   }
   if(st)st.textContent='Loading guide…';
   var prefix=(autoProxyEl.checked&&getProxyPrefix())?getProxyPrefix():'';
-  var fail=function(msg){if(token!==epgToken)return;if(st)st.textContent=msg;if(!silent)toast('Guide load failed');};
+  var fail=function(msg){if(token!==epgToken)return false;if(st)st.textContent=msg;if(!silent)toast('Guide load failed');return false;};
   var tryFetch=function(u,next){
-    fetchWithTimeout(u,45000).then(function(r){
+    return fetchWithTimeout(u,60000).then(function(r){
       if(!r.ok)throw new Error('HTTP '+r.status);
-      var ce=(r.headers.get('content-encoding')||'').toLowerCase();
+      var enc=(r.headers.get('content-encoding')||'').toLowerCase();
+      if(r.body&&r.body.getReader&&typeof TextDecoder!=='undefined'){
+        var body=r.body;
+        if(enc.indexOf('gzip')<0&&/\.gz(\?|$)/i.test(u)&&typeof DecompressionStream!=='undefined'){
+          try{body=r.body.pipeThrough(new DecompressionStream('gzip'));}catch(e){}
+        }
+        return parseEpgStream(body,st,auto,merge).then(function(ok){
+          if(token!==epgToken)return false;
+          return ok;
+        });
+      }
       return r.arrayBuffer().then(function(buf){
         var head=new Uint8Array(buf,0,Math.min(2,buf.byteLength));
         var isGz=head.length>1&&head[0]===0x1f&&head[1]===0x8b;
-        if(isGz&&ce!=='gzip'&&typeof DecompressionStream!=='undefined'){
+        if(isGz&&enc!=='gzip'&&typeof DecompressionStream!=='undefined'){
           try{
             var ds=new DecompressionStream('gzip');
             return new Response(new Blob([buf]).stream().pipeThrough(ds)).text();
           }catch(e){}
         }
         try{return new TextDecoder('utf-8').decode(buf);}catch(e){return '';}
+      }).then(function(text){
+        if(token!==epgToken)return false;
+        if(text.length>46000000){if(st)st.textContent='Guide file too large for this device.';return false;}
+        parseEPG(text,st,auto,merge);
+        return true;
       });
-    }).then(function(text){
-      if(token!==epgToken)return;
-      if(text.length>30000000){if(st)st.textContent='Guide file too large for this device.';return;}
-      parseEPG(text,st,auto);
-    }).catch(function(e){if(token!==epgToken)return;if(next)next(e);else fail('Guide failed: '+((e&&e.message)||e));});
+    }).catch(function(e){
+      if(token!==epgToken)return false;
+      if(next)return next(e);
+      return fail('Guide failed: '+((e&&e.message)||e));
+    });
   };
-  tryFetch(url,function(){
-    if(prefix&&url.indexOf(prefix)!==0)tryFetch(buildProxiedUrl(url,prefix),function(){fail('Guide failed — unreachable.');});
-    else fail('Guide failed — unreachable.');
+  return tryFetch(url,function(){
+    if(prefix&&url.indexOf(prefix)!==0)return tryFetch(buildProxiedUrl(url,prefix),function(){return fail('Guide failed — unreachable.');});
+    return fail('Guide failed — unreachable.');
   });
 }
-function parseEPG(xml,st,auto){
-  var tmp={},count=0;
+function parseEPG(xml,st,auto,merge){
+  var tmp=merge?epgMap:{},count=0;
   var now=Date.now(),minT=now-3*3600000,maxT=now+48*3600000;
   if(xml.length>4000000)count=parseEPGFast(xml,tmp,minT,maxT);
   else{
@@ -2591,19 +2609,16 @@ function parseEPG(xml,st,auto){
       if(count>=120000)break;
     }
   }
-  var nameT={};
+  if(!merge){epgIdsByName={};epgTokenIndex={};epgTokenCount={};}
   var chRe=/<channel\b([^>]*)>([\s\S]*?)<\/channel>/g,cm,idA,nameA;
   while((cm=chRe.exec(xml))){
     idA=/\bid="([^"]*)"/.exec(cm[1]);
     if(!idA)continue;
-    nameA=/<display-name[^>]*>([\s\S]*?)<\/display-name>/.exec(cm[2]);
-    if(nameA){
-      var nn=normName(nameA[1]);
-      if(nn)(nameT[nn]||(nameT[nn]=[])).push(idA[1]);
-    }
+    var nmRe=/<display-name[^>]*>([\s\S]*?)<\/display-name>/g;
+    while((nameA=nmRe.exec(cm[2])))indexEpgName(nameA[1],idA[1]);
   }
   Object.keys(tmp).forEach(function(k){tmp[k].sort(function(a,b){return a.start-b.start;});});
-  epgMap=tmp;epgIdsByName=nameT;epgCount=count?Object.keys(tmp).length:0;
+  epgMap=tmp;epgCount=Object.keys(tmp).length;
   if(st)st.textContent=epgCount+(auto?' channels with guide data (auto-loaded)':' channels with guide data');
   lastWin='';renderEpgBox(currentChannel);renderHome(false);renderGuide();
 }
@@ -2637,8 +2652,73 @@ function parseEPGFast(xml,tmp,minT,maxT){
   }
   return count;
 }
+/* Large guides are parsed while they stream in: a 50 MB XMLTV file never has
+   to exist as one string, so the page keeps running on a phone. */
+function parseEpgStream(stream,st,auto,merge){
+  var tmp=merge?epgMap:{};
+  if(!merge){epgIdsByName={};epgTokenIndex={};epgTokenCount={};}
+  var now=Date.now(),minT=now-3*3600000,maxT=now+48*3600000;
+  var count=0,channels=0,reader=stream.getReader(),decoder=new TextDecoder('utf-8'),buf='';
+  function addProgramme(attrs,body){
+    var cid=/\bchannel="([^"]*)"/.exec(attrs);
+    if(!cid)return;
+    var stA=/\bstart="([^"]*)"/.exec(attrs);
+    if(!stA)return;
+    var pst=epgTime(stA[1]);
+    if(pst==null)return;
+    var stopA=/\bstop="([^"]*)"/.exec(attrs);
+    var psp=stopA?epgTime(stopA[1]):pst+3600000;
+    if(!psp)psp=pst+3600000;
+    if(psp<minT||pst>maxT)return;
+    var arr=tmp[cid[1]]||(tmp[cid[1]]=[]);
+    if(arr.length>=300)return;
+    var tm=/<title[^>]*>([\s\S]*?)<\/title>/.exec(body);
+    var dm=/<desc[^>]*>([\s\S]*?)<\/desc>/.exec(body);
+    arr.push({
+      start:pst,stop:psp,
+      title:tm?(cleanXmlText(tm[1])||'(untitled)'):'(untitled)',
+      desc:dm?cleanXmlText(dm[1]).slice(0,200):''
+    });
+    count++;
+  }
+  function addChannel(attrs,body){
+    var idA=/\bid="([^"]*)"/.exec(attrs);
+    if(!idA)return;
+    var nm=/<display-name[^>]*>([\s\S]*?)<\/display-name>/g,m2;
+    while((m2=nm.exec(body)))indexEpgName(m2[1],idA[1]);
+    channels++;
+  }
+  function pump(){
+    return reader.read().then(function(r){
+      if(r.done)return true;
+      buf+=decoder.decode(r.value,{stream:true});
+      var re=/<(programme|channel)\b([^>]*)>([\s\S]*?)<\/\1>/g,m,last=0;
+      while((m=re.exec(buf))){
+        if(m[1]==='programme')addProgramme(m[2],m[3]);else addChannel(m[2],m[3]);
+        last=re.lastIndex;
+        if(count>=120000||channels>=60000)break;
+      }
+      buf=last?buf.slice(last):buf;
+      if(buf.length>3000000)buf=buf.slice(buf.length-100000);
+      return pump();
+    });
+  }
+  return pump().then(function(){
+    Object.keys(tmp).forEach(function(k){tmp[k].sort(function(a,b){return a.start-b.start;});});
+    epgMap=tmp;epgCount=Object.keys(tmp).length;
+    if(st)st.textContent=epgCount+(auto?' channels with guide data (auto-loaded)':' channels with guide data');
+    lastWin='';renderEpgBox(currentChannel);renderHome(false);renderGuide();
+    return true;
+  });
+}
 function cleanXmlText(s){
-  return String(s||'').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1').replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
+  return decodeEntities(String(s||'').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1').replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim());
+}
+function decodeEntities(s){
+  return String(s||'').replace(/&#(\d+);/g,function(_,n){return String.fromCharCode(parseInt(n,10));})
+    .replace(/&#x([0-9a-f]+);/gi,function(_,n){return String.fromCharCode(parseInt(n,16));})
+    .replace(/"/g,'"').replace(/&apos;/g,"'").replace(/</g,'<')
+    .replace(/>/g,'>').replace(/&nbsp;/g,' ').replace(/&amp;/g,String.fromCharCode(38));
 }
 function chanEpgId(ch){
   if(!ch)return null;
@@ -2653,7 +2733,45 @@ function chanEpgId(ch){
   if(cands){
     for(var i=0;i<cands.length;i++)if(epgMap[cands[i]])return cands[i];
   }
-  return null;
+  return fuzzyEpgId(ch);
+}
+function indexEpgName(name,id){
+  var nn=normName(name);
+  if(!nn)return;
+  (epgIdsByName[nn]||(epgIdsByName[nn]=[])).push(id);
+  var toks=nn.split(' '),i;
+  for(i=0;i<toks.length;i++){
+    if(toks[i].length<3)continue;
+    (epgTokenIndex[toks[i]]||(epgTokenIndex[toks[i]]=[])).push(id);
+  }
+  if(!epgTokenCount[id])epgTokenCount[id]=toks.length;
+}
+/* Fallback: a guide may spell a channel differently ("ACC Digital Network"
+   vs "ACC Network"). When one guide channel contains every word of the
+   channel name, and only one, that channel is used. */
+function fuzzyEpgId(ch){
+  var toks=normName(ch.name).split(' '),i,j;
+  var words=[];
+  for(i=0;i<toks.length;i++)if(toks[i].length>=3)words.push(toks[i]);
+  if(words.length<2)return null;
+  var ids=null;
+  for(i=0;i<words.length;i++){
+    var list=epgTokenIndex[words[i]]||[];
+    if(!list.length)return null;
+    if(ids===null){ids=list.slice();continue;}
+    var set={};
+    for(j=0;j<ids.length;j++)set[ids[j]]=1;
+    ids=ids.filter(function(x){return set[x];});
+    if(!ids.length)return null;
+  }
+  var best=null,bestScore=1e9,ambiguous=false;
+  for(i=0;i<ids.length;i++){
+    if(!epgMap[ids[i]])continue;
+    var score=epgTokenCount[ids[i]]||0;
+    if(score<bestScore){bestScore=score;best=ids[i];ambiguous=false;}
+    else if(score===bestScore)ambiguous=true;
+  }
+  return ambiguous?null:best;
 }
 function epgForChannel(ch){
   if(!ch||!epgCount)return null;
@@ -3087,17 +3205,34 @@ function loadCountryIndex(){
     return d;
   }).catch(function(){return null;});
 }
-function epgUrlForCountry(country){
-  if(!epgProviders||!epgProviders.providers)return '';
-  for(var i=0;i<epgProviders.providers.length;i++){
-    var p=epgProviders.providers[i];
-    if(p.countries&&p.countries[country])return p.countries[country];
+function epgGuidesForCountry(country){
+  var out=[];
+  if(!epgProviders||!epgProviders.guides||!country)return out;
+  for(var i=0;i<epgProviders.guides.length;i++){
+    var g=epgProviders.guides[i];
+    if(g.countries&&g.countries.indexOf(country)>=0)out.push(g);
   }
-  return '';
+  return out;
 }
 function loadEpgProviders(){
   if(epgProviders)return Promise.resolve(epgProviders);
   return fetchJson(DATA_BASE+'epg.json').then(function(d){epgProviders=d;return d;}).catch(function(){return null;});
+}
+function fillEpgPicker(country){
+  var sel=$('epgPick'),note=$('epgPickNote');
+  if(!sel)return;
+  var guides=epgGuidesForCountry(country);
+  var cur=sget('iptv_epg_pick')||'auto';
+  var html='<option value="auto">Auto (recommended guide)</option>';
+  for(var i=0;i<guides.length;i++){
+    html+='<option value="'+guides[i].id+'">'+guides[i].label.replace(/[<>&]/g,'')+'</option>';
+  }
+  if(guides.length>1)html+='<option value="all">All available guides (slower, more coverage)</option>';
+  sel.innerHTML=html;
+  sel.value=cur;
+  if(cur&&!sel.value)sel.value='auto';
+  sel.style.display=guides.length?'block':'none';
+  if(note)note.textContent=guides.length?guides.length+' public guide'+(guides.length>1?'s':'')+' available for '+countryLabel(country):'No public guide for '+countryLabel(country)+' yet — paste an XMLTV URL below.';
 }
 function autoLoadEpg(country){
   if(sget('iptv_auto_epg')==='0')return;
@@ -3105,14 +3240,41 @@ function autoLoadEpg(country){
   if(!country||country==='world')return;
   var st=$('epgStatus');
   loadEpgProviders().then(function(){
-    var url=epgUrlForCountry(country);
-    if(!url){
+    var guides=epgGuidesForCountry(country);
+    fillEpgPicker(country);
+    if(!guides.length){
       if(st)st.textContent='No public guide for this country yet — add an XMLTV URL below.';
       return;
     }
-    if(st)st.textContent='Loading guide…';
-    epgInput.value=url;
-    loadEPG(url,true,true);
+    var pick=sget('iptv_epg_pick')||'auto';
+    var list=[];
+    if(pick==='all')list=guides.slice();
+    else if(pick!=='auto'){
+      for(var i=0;i<guides.length;i++)if(guides[i].id===pick)list.push(guides[i]);
+    }else{
+      for(var j=0;j<guides.length;j++)if(guides[j].cors!==false){list.push(guides[j]);break;}
+      if(!list.length)list.push(guides[0]);
+    }
+    var loaded=0,failedNote='';
+    var chain=Promise.resolve();
+    list.forEach(function(g,idx){
+      chain=chain.then(function(){
+        if(g.cors===false&&!getProxyPrefix())return null;
+        if(st)st.textContent='Loading guide'+(list.length>1?' ('+(idx+1)+'/'+list.length+')':'')+'…';
+        return loadEPG(g.url,true,true,idx>0).then(function(ok){
+          if(ok){loaded++;epgInput.value=g.url;}
+          else failedNote=' · “'+g.label+'” could not be fetched'+(g.cors===false?' (needs a working proxy)':'');
+          return ok;
+        });
+      });
+    });
+    chain.then(function(){
+      if(st&&loaded){
+        st.textContent=epgCount+' channels with guide data'+(loaded>1?' ('+loaded+' guides)':' (auto-loaded)')+failedNote;
+      }else if(st&&failedNote){
+        st.textContent=failedNote.replace(/^ · /,'');
+      }
+    });
   });
 }
 function loadApiSource(country){
@@ -3214,6 +3376,11 @@ proxySelect.addEventListener('change',function(){sset('iptv_proxy',proxySelect.v
 proxyCustom.addEventListener('input',function(){sset('iptv_proxy_custom',proxyCustom.value);});
 autoProxyEl.addEventListener('change',function(){sset('iptv_autoproxy',autoProxyEl.checked?'1':'0');});
 autoEpgEl.addEventListener('change',function(){sset('iptv_auto_epg',autoEpgEl.checked?'1':'0');});
+$('epgPick').addEventListener('change',function(){
+  sset('iptv_epg_pick',this.value);
+  var cc=$('apiCountry').value;
+  if(cc&&cc!=='world')autoLoadEpg(cc);
+});
 autoSkipEl.addEventListener('change',function(){sset('iptv_autoskip',autoSkipEl.checked?'1':'0');});
 showFailedEl.addEventListener('change',function(){sset('iptv_showFailed',showFailedEl.checked?'1':'0');applyFilters(false);});
 showAdultEl.addEventListener('change',function(){sset('iptv_showAdult',showAdultEl.checked?'1':'0');applyFilters(false);});
@@ -3428,6 +3595,8 @@ window.tunerDebug={
   proxyUrl:function(ch){proxyExtra=proxyExtraFor(ch);return buildProxiedUrl(ch.url,getProxyPrefix());},
   epgFor:function(ch){return epgForChannel(ch);},
   epgCount:function(){return epgCount;},
+  epgNames:function(){return Object.keys(epgIdsByName||{});},
+  epgIds:function(id){return (epgIdsByName&&epgIdsByName[id])||[];},
   scan:function(){return {ok:Array.from(directWorksSet),fail:Array.from(directFailSet),pending:scanPendingCount(),running:scanState.running};}
 };
 try{$('apiCountry').value=sget('iptv_api_country')||'IN';}catch(e){}
