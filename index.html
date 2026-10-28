@@ -3136,7 +3136,9 @@ var DATA_BASE='data/';
 var dataIndex=null,epgProviders=null;
 var CAT_NAMES={animation:'Animation',auto:'Auto',business:'Business',classic:'Classic',comedy:'Comedy',cooking:'Cooking',culture:'Culture',documentary:'Documentary',education:'Education',entertainment:'Entertainment',family:'Family',general:'General',interactive:'Interactive',kids:'Kids',legislative:'Legislative',lifestyle:'Lifestyle',movies:'Movies',music:'Music',news:'News',outdoor:'Outdoor',public:'Public',relax:'Relax',religious:'Religious',series:'Series',science:'Science',shop:'Shopping',sports:'Sports',travel:'Travel',weather:'Weather',xxx:'Adult'};
 function fetchJson(url){
-  return fetch(url,{cache:'force-cache',credentials:'omit',referrerPolicy:'no-referrer'}).then(function(r){
+  /* Normal HTTP caching (GitHub Pages sends max-age=600) — the channel data
+     is rebuilt daily, so a stale copy must not be pinned for weeks. */
+  return fetch(url,{credentials:'omit',referrerPolicy:'no-referrer'}).then(function(r){
     if(!r.ok)throw new Error('HTTP '+r.status);
     return r.json();
   });
