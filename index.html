@@ -663,7 +663,7 @@ body.crt #remoteDlg input{background:#0b1108;border-color:#2e4527;color:#d8ffc2}
       </div>
     </div>
     <div class="field">
-      <label for="apiCountry">iptv-org API (JSON — richer metadata)</label>
+      <label for="apiCountry">iptv-org channels (JSON — richer metadata)</label>
       <div class="row">
         <select id="apiCountry">
           <option value="IN" selected>🇮🇳 India</option>
@@ -679,7 +679,7 @@ body.crt #remoteDlg input{background:#0b1108;border-color:#2e4527;color:#d8ffc2}
         </select>
         <button class="btn" id="apiLoadBtn" style="flex:0 0 auto">Load JSON</button>
       </div>
-      <small style="color:var(--muted);font-size:12px">Same channels as the .m3u playlists, plus quality, NSFW flag, geo-block labels, country/feed and the Referer/User-Agent each stream needs (applied when using Tuner's own proxy).</small>
+      <small id="apiNote" style="color:var(--muted);font-size:12px">Same channels as the .m3u playlists, plus quality, NSFW flag, geo-block labels, country/feed and the Referer/User-Agent each stream needs (applied when using Tuner's own proxy).</small>
     </div>
     <div class="field">
       <label class="file-btn" for="fileInput" tabindex="0" id="fileLabel">📁 Open local .m3u file</label>
@@ -689,6 +689,7 @@ body.crt #remoteDlg input{background:#0b1108;border-color:#2e4527;color:#d8ffc2}
       <label for="epgInput">TV guide URL (XMLTV, optional)</label>
       <input id="epgInput" type="text" spellcheck="false" inputmode="url" placeholder="https://example.com/guide.xml" />
       <small id="epgStatus" style="color:var(--muted);font-size:12px">No guide loaded — shows Now/Next on player and cards.</small>
+      <label class="switch" style="margin-top:8px"><span>Auto-load a guide for the selected country</span><input type="checkbox" id="autoEpg" checked /></label>
     </div>
     <div class="field">
       <label for="proxySelect">CORS proxy</label>
@@ -826,7 +827,7 @@ var $=function(id){return document.getElementById(id);};
 var video=$('video'),videoWrap=$('videoWrap'),listWrap=$('listWrap'),listSpacer=$('listSpacer'),emptyMsg=$('emptyMsg');
 var searchEl=$('search'),searchBox=$('searchBox'),chipsEl=$('chips'),countsEl=$('counts'),failedInfo=$('failedInfo');
 var urlInput=$('urlInput'),countrySelect=$('countrySelect'),langSelect=$('langSelect'),proxySelect=$('proxySelect'),proxyCustom=$('proxyCustom'),epgInput=$('epgInput');
-var autoProxyEl=$('autoProxy'),showFailedEl=$('showFailed'),autoSkipEl=$('autoSkip'),showAdultEl=$('showAdult'),showDirectOnlyEl=$('showDirectOnly');
+var autoProxyEl=$('autoProxy'),showFailedEl=$('showFailed'),autoSkipEl=$('autoSkip'),showAdultEl=$('showAdult'),showDirectOnlyEl=$('showDirectOnly'),autoEpgEl=$('autoEpg');
 var settings=$('settings'),welcome=$('welcome'),helpDlg=$('help');
 var homeView=$('homeView'),watchView=$('watchView'),guideView=$('guideView'),drawer=$('drawer'),scrim=$('scrim');
 var grid=$('grid'),rail=$('rail'),railWrap=$('railWrap'),moreBtn=$('moreBtn'),homeEmpty=$('homeEmpty');
@@ -892,6 +893,7 @@ if(_sp==='corsproxy'){proxySelect.value='allorigins';sset('iptv_proxy','allorigi
 else if(_sp)proxySelect.value=_sp;
 if(sget('iptv_proxy_custom'))proxyCustom.value=sget('iptv_proxy_custom');
 if(sget('iptv_autoproxy')==='0')autoProxyEl.checked=false;
+if(sget('iptv_auto_epg')==='0')autoEpgEl.checked=false;
 
 function toast(msg,opts){
   opts=opts||{};
@@ -2521,7 +2523,7 @@ function normName(s){
     .replace(/[^a-z0-9\u0900-\u097f]+/g,' ')
     .replace(/\s+/g,' ').trim();
 }
-function loadEPG(url,silent){
+function loadEPG(url,silent,auto){
   var token=++epgToken;
   var st=$('epgStatus');
   if(!url){
@@ -2534,7 +2536,7 @@ function loadEPG(url,silent){
   var prefix=(autoProxyEl.checked&&getProxyPrefix())?getProxyPrefix():'';
   var fail=function(msg){if(token!==epgToken)return;if(st)st.textContent=msg;if(!silent)toast('Guide load failed');};
   var tryFetch=function(u,next){
-    fetchWithTimeout(u,25000).then(function(r){
+    fetchWithTimeout(u,45000).then(function(r){
       if(!r.ok)throw new Error('HTTP '+r.status);
       var ce=(r.headers.get('content-encoding')||'').toLowerCase();
       return r.arrayBuffer().then(function(buf){
@@ -2551,7 +2553,7 @@ function loadEPG(url,silent){
     }).then(function(text){
       if(token!==epgToken)return;
       if(text.length>30000000){if(st)st.textContent='Guide file too large for this device.';return;}
-      parseEPG(text,st);
+      parseEPG(text,st,auto);
     }).catch(function(e){if(token!==epgToken)return;if(next)next(e);else fail('Guide failed: '+((e&&e.message)||e));});
   };
   tryFetch(url,function(){
@@ -2559,48 +2561,84 @@ function loadEPG(url,silent){
     else fail('Guide failed — unreachable.');
   });
 }
-function parseEPG(xml,st){
-  var doc;
-  try{doc=new DOMParser().parseFromString(xml,'text/xml');}catch(e){if(st)st.textContent='Guide is not valid XML.';return;}
-  if(doc.querySelector&&doc.querySelector('parsererror')){if(st)st.textContent='Guide is not valid XML.';return;}
-  var tmp={},total=0,count=0;
+function parseEPG(xml,st,auto){
+  var tmp={},count=0;
   var now=Date.now(),minT=now-3*3600000,maxT=now+48*3600000;
-  var progs=doc.getElementsByTagName('programme');
-  for(var i=0;i<progs.length;i++){
-    var p=progs[i],cid=p.getAttribute('channel');
-    if(!cid)continue;
-    var pst=epgTime(p.getAttribute('start'));
-    if(pst==null)continue;
-    var psp=epgTime(p.getAttribute('stop'))||pst+3600000;
-    if(psp<minT||pst>maxT)continue;
-    var arr=tmp[cid]||(tmp[cid]=[]);
-    if(arr.length>=300)continue;
-    var tn=p.getElementsByTagName('title')[0];
-    var descEl=p.getElementsByTagName('desc')[0];
-    arr.push({
-      start:pst,
-      stop:psp,
-      title:tn?(String(tn.textContent||'').trim()||'(untitled)'):'(untitled)',
-      desc:descEl?String(descEl.textContent||'').trim().slice(0,200):''
-    });
-    total++;count++;
-    if(count>=120000)break;
-  }
-  Object.keys(tmp).forEach(function(k){tmp[k].sort(function(a,b){return a.start-b.start;});});
-  var nameT={};
-  var chans=doc.getElementsByTagName('channel');
-  for(var j=0;j<chans.length;j++){
-    var c=chans[j],id2=c.getAttribute('id');
-    if(!id2)continue;
-    var dn=c.getElementsByTagName('display-name')[0];
-    if(dn){
-      var nn=normName(dn.textContent);
-      if(nn)(nameT[nn]||(nameT[nn]=[])).push(id2);
+  if(xml.length>4000000)count=parseEPGFast(xml,tmp,minT,maxT);
+  else{
+    var doc;
+    try{doc=new DOMParser().parseFromString(xml,'text/xml');}catch(e){if(st)st.textContent='Guide is not valid XML.';return;}
+    if(doc.querySelector&&doc.querySelector('parsererror')){if(st)st.textContent='Guide is not valid XML.';return;}
+    var progs=doc.getElementsByTagName('programme');
+    for(var i=0;i<progs.length;i++){
+      var p=progs[i],cid=p.getAttribute('channel');
+      if(!cid)continue;
+      var pst=epgTime(p.getAttribute('start'));
+      if(pst==null)continue;
+      var psp=epgTime(p.getAttribute('stop'))||pst+3600000;
+      if(psp<minT||pst>maxT)continue;
+      var arr=tmp[cid]||(tmp[cid]=[]);
+      if(arr.length>=300)continue;
+      var tn=p.getElementsByTagName('title')[0];
+      var descEl=p.getElementsByTagName('desc')[0];
+      arr.push({
+        start:pst,
+        stop:psp,
+        title:tn?(String(tn.textContent||'').trim()||'(untitled)'):'(untitled)',
+        desc:descEl?String(descEl.textContent||'').trim().slice(0,200):''
+      });
+      count++;
+      if(count>=120000)break;
     }
   }
-  epgMap=tmp;epgIdsByName=nameT;epgCount=total?Object.keys(tmp).length:0;
-  if(st)st.textContent=epgCount+' channels with guide data';
+  var nameT={};
+  var chRe=/<channel\b([^>]*)>([\s\S]*?)<\/channel>/g,cm,idA,nameA;
+  while((cm=chRe.exec(xml))){
+    idA=/\bid="([^"]*)"/.exec(cm[1]);
+    if(!idA)continue;
+    nameA=/<display-name[^>]*>([\s\S]*?)<\/display-name>/.exec(cm[2]);
+    if(nameA){
+      var nn=normName(nameA[1]);
+      if(nn)(nameT[nn]||(nameT[nn]=[])).push(idA[1]);
+    }
+  }
+  Object.keys(tmp).forEach(function(k){tmp[k].sort(function(a,b){return a.start-b.start;});});
+  epgMap=tmp;epgIdsByName=nameT;epgCount=count?Object.keys(tmp).length:0;
+  if(st)st.textContent=epgCount+(auto?' channels with guide data (auto-loaded)':' channels with guide data');
   lastWin='';renderEpgBox(currentChannel);renderHome(false);renderGuide();
+}
+/* Large guides (10 MB+) are parsed with a regex scan: DOMParser needs far
+   more memory and blocks the UI for seconds on a phone. */
+function parseEPGFast(xml,tmp,minT,maxT){
+  var re=/<programme\b([^>]*)>([\s\S]*?)<\/programme>/g,m,attrs,body,count=0;
+  while((m=re.exec(xml))){
+    attrs=m[1];body=m[2];
+    var cid=/\bchannel="([^"]*)"/.exec(attrs);
+    if(!cid)continue;
+    var stAttr=/\bstart="([^"]*)"/.exec(attrs);
+    if(!stAttr)continue;
+    var pst=epgTime(stAttr[1]);
+    if(pst==null)continue;
+    var stopAttr=/\bstop="([^"]*)"/.exec(attrs);
+    var psp=stopAttr?epgTime(stopAttr[1]):pst+3600000;
+    if(!psp)psp=pst+3600000;
+    if(psp<minT||pst>maxT)continue;
+    var arr=tmp[cid[1]]||(tmp[cid[1]]=[]);
+    if(arr.length>=300)continue;
+    var tm=/<title[^>]*>([\s\S]*?)<\/title>/.exec(body);
+    var dm=/<desc[^>]*>([\s\S]*?)<\/desc>/.exec(body);
+    arr.push({
+      start:pst,stop:psp,
+      title:tm?cleanXmlText(tm[1])||'(untitled)':'(untitled)',
+      desc:dm?cleanXmlText(dm[1]).slice(0,200):''
+    });
+    count++;
+    if(count>=120000)break;
+  }
+  return count;
+}
+function cleanXmlText(s){
+  return String(s||'').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1').replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
 }
 function chanEpgId(ch){
   if(!ch)return null;
@@ -2976,6 +3014,8 @@ function loadText(text,label,token){
    geo-block labels, feed/country info and the Referer/User-Agent a stream
    may need (used when the request goes through Tuner's own proxy). */
 var API_BASE='https://iptv-org.github.io/api/';
+var DATA_BASE='data/';
+var dataIndex=null,epgProviders=null;
 var CAT_NAMES={animation:'Animation',auto:'Auto',business:'Business',classic:'Classic',comedy:'Comedy',cooking:'Cooking',culture:'Culture',documentary:'Documentary',education:'Education',entertainment:'Entertainment',family:'Family',general:'General',interactive:'Interactive',kids:'Kids',legislative:'Legislative',lifestyle:'Lifestyle',movies:'Movies',music:'Music',news:'News',outdoor:'Outdoor',public:'Public',relax:'Relax',religious:'Religious',series:'Series',science:'Science',shop:'Shopping',sports:'Sports',travel:'Travel',weather:'Weather',xxx:'Adult'};
 function fetchJson(url){
   return fetch(url,{cache:'force-cache',credentials:'omit',referrerPolicy:'no-referrer'}).then(function(r){
@@ -3000,10 +3040,99 @@ function normHeaderValue(v,key){
   else if(s.indexOf('#EXTVLCOPT:')===0)s=s.slice('#EXTVLCOPT:'.length);
   return s.replace(/[\r\n\0]/g,'').trim().slice(0,250);
 }
+function compactToChannels(d){
+  var out=[],list=(d&&d.streams)||[];
+  for(var i=0;i<list.length;i++){
+    var e=list[i],cid=e.c||'';
+    out.push({
+      name:e.n||'',logo:e.l||'',group:e.g||'General',
+      tvgId:cid?(cid+(e.f?'@'+e.f:'')):'',
+      url:e.u||'',adult:e.x===1,
+      country:d&&d.country&&d.country!=='world'?d.country:'',
+      quality:e.q||'',labels:e.b||[],
+      referrer:e.r||'',userAgent:e.a||'',
+      feed:e.f||'',channelId:cid
+    });
+  }
+  return out;
+}
+function countryLabel(code){
+  if(code==='world')return 'World';
+  if(dataIndex&&dataIndex.countries){
+    for(var i=0;i<dataIndex.countries.length;i++){
+      if(dataIndex.countries[i].code===code)return dataIndex.countries[i].name;
+    }
+  }
+  return ccName(code);
+}
+function loadCountryIndex(){
+  if(dataIndex)return Promise.resolve(dataIndex);
+  return fetchJson(DATA_BASE+'index.json').then(function(d){
+    dataIndex=d;
+    var sel=$('apiCountry');
+    if(sel&&d.countries&&d.countries.length){
+      var cur=sel.value||'IN',html='';
+      for(var i=0;i<d.countries.length;i++){
+        var c=d.countries[i];
+        var label=(c.code==='world'?'🌍 World':((c.flag||'')+' '+c.name))+' — '+c.streams+' streams';
+        html+='<option value="'+c.code+'">'+label.replace(/[<>&]/g,'')+'</option>';
+      }
+      html+='<option value="world">🌍 World (all) — '+(d.streams||0)+' streams</option>';
+      sel.innerHTML=html;
+      sel.value=cur;
+      if(cur&&!sel.value)sel.value='IN';
+    }
+    var note=$('apiNote');
+    if(note&&d.updated)note.textContent='Updated '+d.updated+' · '+d.streams+' streams in '+d.countries.length+' countries. Same channels as the .m3u playlists, plus quality, NSFW flag, geo-block labels, feed/country and the Referer/User-Agent each stream needs.';
+    return d;
+  }).catch(function(){return null;});
+}
+function epgUrlForCountry(country){
+  if(!epgProviders||!epgProviders.providers)return '';
+  for(var i=0;i<epgProviders.providers.length;i++){
+    var p=epgProviders.providers[i];
+    if(p.countries&&p.countries[country])return p.countries[country];
+  }
+  return '';
+}
+function loadEpgProviders(){
+  if(epgProviders)return Promise.resolve(epgProviders);
+  return fetchJson(DATA_BASE+'epg.json').then(function(d){epgProviders=d;return d;}).catch(function(){return null;});
+}
+function autoLoadEpg(country){
+  if(sget('iptv_auto_epg')==='0')return;
+  if(sget('iptv_epg'))return;          // a guide the user picked always wins
+  if(!country||country==='world')return;
+  var st=$('epgStatus');
+  loadEpgProviders().then(function(){
+    var url=epgUrlForCountry(country);
+    if(!url){
+      if(st)st.textContent='No public guide for this country yet — add an XMLTV URL below.';
+      return;
+    }
+    if(st)st.textContent='Loading guide…';
+    epgInput.value=url;
+    loadEPG(url,true,true);
+  });
+}
 function loadApiSource(country){
   if(!country)return;
   var token=++loadToken;
   showSkeleton();
+  var cc=String(country).toLowerCase();
+  loadedSource={url:DATA_BASE+cc+'.json',label:'iptv-org'};
+  toast('Loading '+countryLabel(country)+'…');
+  fetchJson(DATA_BASE+cc+'.json').then(function(d){
+    if(token!==loadToken)return;
+    var out=compactToChannels(d);
+    installChannels(out,'iptv-org · '+countryLabel(country),'');
+    autoLoadEpg(country);
+  }).catch(function(){
+    if(token!==loadToken)return;
+    loadApiSourceRemote(country,token);
+  });
+}
+function loadApiSourceRemote(country,token){
   loadedSource={url:API_BASE,label:'iptv-org API'};
   toast('Downloading iptv-org data…');
   Promise.all([
@@ -3049,7 +3178,7 @@ function loadApiSource(country){
         feed:s.feed||'',channelId:cid
       });
     }
-    var label='iptv-org API · '+(country==='world'?'World':ccName(country));
+    var label='iptv-org API · '+countryLabel(country);
     installChannels(out,label,'');
     if(skipped)toast(skipped+' non-http streams skipped');
   }).catch(function(e){
@@ -3084,6 +3213,7 @@ function syncProxyUI(){proxyCustom.style.display=proxySelect.value==='custom'?'b
 proxySelect.addEventListener('change',function(){sset('iptv_proxy',proxySelect.value);syncProxyUI();});
 proxyCustom.addEventListener('input',function(){sset('iptv_proxy_custom',proxyCustom.value);});
 autoProxyEl.addEventListener('change',function(){sset('iptv_autoproxy',autoProxyEl.checked?'1':'0');});
+autoEpgEl.addEventListener('change',function(){sset('iptv_auto_epg',autoEpgEl.checked?'1':'0');});
 autoSkipEl.addEventListener('change',function(){sset('iptv_autoskip',autoSkipEl.checked?'1':'0');});
 showFailedEl.addEventListener('change',function(){sset('iptv_showFailed',showFailedEl.checked?'1':'0');applyFilters(false);});
 showAdultEl.addEventListener('change',function(){sset('iptv_showAdult',showAdultEl.checked?'1':'0');applyFilters(false);});
@@ -3296,9 +3426,12 @@ urlInput.value=sget('iptv_url')||DEFAULT_URL;
 window.tunerDebug={
   channels:function(){return allChannels;},
   proxyUrl:function(ch){proxyExtra=proxyExtraFor(ch);return buildProxiedUrl(ch.url,getProxyPrefix());},
+  epgFor:function(ch){return epgForChannel(ch);},
+  epgCount:function(){return epgCount;},
   scan:function(){return {ok:Array.from(directWorksSet),fail:Array.from(directFailSet),pending:scanPendingCount(),running:scanState.running};}
 };
 try{$('apiCountry').value=sget('iptv_api_country')||'IN';}catch(e){}
+loadCountryIndex();
 addCountryOptions(FALLBACK_COUNTRIES.map(function(f){return {code:f[0],name:f[1],flag:f[2]};}));
 addLangOptions();
 bindCards(grid);bindCards(rail);

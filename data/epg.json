@@ -1,0 +1,43 @@
+{
+ "v": 1,
+ "updated": "2026-10-27",
+ "providers": [
+  {
+   "id": "tvepg-in",
+   "label": "Indian channels (tvepg)",
+   "countries": {
+    "IN": "https://raw.githubusercontent.com/mitthu786/tvepg/main/epg.xml.gz"
+   }
+  },
+  {
+   "id": "epgtalk-uk",
+   "label": "EPGTalk UK",
+   "countries": {
+    "UK": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/UK_lite.xml.gz"
+   }
+  },
+  {
+   "id": "epgtalk-us",
+   "label": "EPGTalk US free-to-air",
+   "countries": {
+    "US": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/FreeTV_guide.xml.gz"
+   }
+  },
+  {
+   "id": "epgtalk-latino",
+   "label": "EPGTalk Latino",
+   "countries": {
+    "MX": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz",
+    "AR": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz",
+    "CL": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz",
+    "CO": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz",
+    "PE": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz",
+    "VE": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz",
+    "EC": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz",
+    "BO": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz",
+    "PY": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz",
+    "UY": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Latino_lite.xml.gz"
+   }
+  }
+ ]
+}

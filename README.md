@@ -41,10 +41,9 @@ Two ways to get the same channels, both from [iptv-org](https://github.com/iptv-
 
 - **.m3u playlist** (default) — `https://iptv-org.github.io/iptv/countries/in.m3u`,
   one entry per channel with the best available link.
-- **JSON API** — *Sources & proxy → iptv-org API → Load JSON*. Downloads
-  `streams.json`, `channels.json`, `logos.json` and `feeds.json` from
-  `https://iptv-org.github.io/api/` (~3 MB compressed) and keeps **every** stream,
-  not just the best one per channel. It adds data the .m3u does not carry:
+- **JSON** — *Setup → iptv-org channels → Load JSON*. The country list is built
+  from the iptv-org database and keeps **every** stream, not just the best one
+  per channel. It adds data the .m3u does not carry:
   - `quality` (720p/1080p…) and the feed name in the channel title,
   - `is_nsfw` from the database, used for the adult filter,
   - `Geo-blocked` / `Not 24/7` labels (shown as ⚠ on the card),
@@ -57,6 +56,35 @@ Those last two are sent to Tuner's own proxy (`server.js`) or a deployed
 providers that reject requests without them can still work. Browsers cannot
 set those headers themselves, which is why such streams fail when played
 directly. The values are sanitised (no CR/LF) before being forwarded.
+
+### Where the data comes from
+
+`data/<country>.json` holds one compact file per country (India ≈ 320 KB raw,
+≈ 80 KB over the wire) plus `data/index.json` (country list with stream
+counts) and `data/epg.json` (guide providers). The app downloads only the file
+for the selected country — not the ~3 MB of iptv-org API JSON — and falls back
+to the live API if a file is missing.
+
+`data/` is generated, never hand-edited:
+
+```sh
+git clone --depth 1 --branch gh-pages https://github.com/iptv-org/api.git /tmp/iptv-api
+node tools/build-data.mjs --api /tmp/iptv-api --out data
+```
+
+`.github/workflows/update-data.yml` runs this every night and commits the
+result, so the channel lists stay fresh without touching the app.
+
+### TV guide (EPG)
+
+*Setup → TV guide URL* takes any XMLTV file. On top of that, Tuner can load a
+public guide automatically for the selected country (switch: **Auto-load a
+guide for the selected country**). Providers are listed in `data/epg.json`
+(Indian channels via `tvepg`, UK/US/Latin America via `EPGTalk`); channels are
+matched by XMLTV id and by name, so roughly 60 % of the Indian list and 25 % of
+the UK list get Now/Next information. A guide URL you set yourself always wins
+over the automatic one. Guides over 4 MB are parsed with a regex scanner so a
+12 MB file does not freeze the page.
 
 ## CRT Mode
 
