@@ -35,6 +35,29 @@ Tuner checks every channel for you and can hide the ones that need a proxy or ar
 - Channels you play successfully are also marked as working, and a direct-play failure
   un-marks the channel immediately.
 
+## iptv-org data sources
+
+Two ways to get the same channels, both from [iptv-org](https://github.com/iptv-org):
+
+- **.m3u playlist** (default) — `https://iptv-org.github.io/iptv/countries/in.m3u`,
+  one entry per channel with the best available link.
+- **JSON API** — *Sources & proxy → iptv-org API → Load JSON*. Downloads
+  `streams.json`, `channels.json`, `logos.json` and `feeds.json` from
+  `https://iptv-org.github.io/api/` (~3 MB compressed) and keeps **every** stream,
+  not just the best one per channel. It adds data the .m3u does not carry:
+  - `quality` (720p/1080p…) and the feed name in the channel title,
+  - `is_nsfw` from the database, used for the adult filter,
+  - `Geo-blocked` / `Not 24/7` labels (shown as ⚠ on the card),
+  - country and category (used for the group chips),
+  - logos per channel/feed,
+  - the `Referer` and `User-Agent` some providers require.
+
+Those last two are sent to Tuner's own proxy (`server.js`) or a deployed
+`worker.js` as `?referer=…&ua=…` when a stream is played through it, so
+providers that reject requests without them can still work. Browsers cannot
+set those headers themselves, which is why such streams fail when played
+directly. The values are sanitised (no CR/LF) before being forwarded.
+
 ## CRT Mode
 
 Nostalgia mode: TV bezel, scanlines, film grain, vignette, and an analog zap on

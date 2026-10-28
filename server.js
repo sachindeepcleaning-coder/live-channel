@@ -93,6 +93,13 @@ function corsHeaders(origin, allowed) {
   return h;
 }
 
+// Header values coming from query params must not be able to inject extra
+// headers or break the request line.
+function cleanHeader(value) {
+  if (!value) return '';
+  return String(value).replace(/[\r\n\0]/g, '').trim().slice(0, 300);
+}
+
 function blockedV4(ip) {
   const p = String(ip).split('.').map(Number);
   if (p.length !== 4 || p.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
@@ -564,6 +571,13 @@ const server = http.createServer(async (req, res) => {
   const token = req.headers['x-proxy-token'] || reqUrl.searchParams.get('token') || '';
   const referer = req.headers.referer || '';
 
+  // Per-stream headers some providers require (iptv-org/api records them):
+  // ?referer=… sets the upstream Referer, ?ua=… the upstream User-Agent.
+  const headerOverride = {
+    referer: cleanHeader(reqUrl.searchParams.get('referer')),
+    userAgent: cleanHeader(reqUrl.searchParams.get('ua')),
+  };
+
   let refOrigin = '';
   try {
     refOrigin = referer ? new URL(referer).origin : '';
@@ -642,7 +656,7 @@ const server = http.createServer(async (req, res) => {
     const u = new URL(hop.url);
     const headers = {
       Host: u.host,
-      'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (compatible; TunerProxy/2.0)',
+      'User-Agent': headerOverride.userAgent || req.headers['user-agent'] || 'Mozilla/5.0 (compatible; TunerProxy/2.0)',
       'Accept-Encoding': 'identity',
     };
     const allow = withRange
@@ -651,6 +665,7 @@ const server = http.createServer(async (req, res) => {
     for (const h of allow) {
       if (req.headers[h]) headers[h] = req.headers[h];
     }
+    if (headerOverride.referer) headers.Referer = headerOverride.referer;
     if (hop.authorization) headers.Authorization = hop.authorization;
     return headers;
   };

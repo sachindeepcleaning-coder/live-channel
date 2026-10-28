@@ -663,6 +663,25 @@ body.crt #remoteDlg input{background:#0b1108;border-color:#2e4527;color:#d8ffc2}
       </div>
     </div>
     <div class="field">
+      <label for="apiCountry">iptv-org API (JSON — richer metadata)</label>
+      <div class="row">
+        <select id="apiCountry">
+          <option value="IN" selected>🇮🇳 India</option>
+          <option value="US">🇺🇸 USA</option>
+          <option value="UK">🇬🇧 UK</option>
+          <option value="PK">🇵🇰 Pakistan</option>
+          <option value="BD">🇧🇩 Bangladesh</option>
+          <option value="AE">🇦🇪 UAE</option>
+          <option value="SA">🇸🇦 Saudi Arabia</option>
+          <option value="DE">🇩🇪 Germany</option>
+          <option value="FR">🇫🇷 France</option>
+          <option value="world">🌍 World (all)</option>
+        </select>
+        <button class="btn" id="apiLoadBtn" style="flex:0 0 auto">Load JSON</button>
+      </div>
+      <small style="color:var(--muted);font-size:12px">Same channels as the .m3u playlists, plus quality, NSFW flag, geo-block labels, country/feed and the Referer/User-Agent each stream needs (applied when using Tuner's own proxy).</small>
+    </div>
+    <div class="field">
       <label class="file-btn" for="fileInput" tabindex="0" id="fileLabel">📁 Open local .m3u file</label>
       <input id="fileInput" type="file" accept=".m3u,.m3u8,.txt,text/plain" hidden />
     </div>
@@ -821,7 +840,7 @@ var currentChannel=null,currentUrl=null,hls=null,raf=null,nativeBlobUrl=null;
 var attemptSeq=0,currentAttempt=0,autoProxyTimer=null,teardownTs=0;
 var triedPrefixes=[],usedPrefix='';
 var pendingQ='auto',searchDebT=null,loadToken=0,epgToken=0;
-var SCAN_KEY='iptv_scan_v1',SCAN_OK_TTL=7*24*3600*1000,SCAN_FAIL_TTL=24*3600*1000,SCAN_CONC=6,SCAN_REQ_MS=6000;
+var SCAN_KEY='iptv_scan_v1',SCAN_OK_TTL=7*24*3600*1000,SCAN_FAIL_TTL=24*3600*1000,SCAN_CONC=6,SCAN_REQ_MS=6000,SCAN_MAX=1500;
 var scanOkTs={},scanFailTs={};
 var scanState={running:false,stop:false,token:0,queue:[],active:0,done:0,ok:0,total:0,refilterT:null};
 var sleepEndTs=0,sleepTimer=null,sleepTick=null;
@@ -1226,7 +1245,7 @@ function scanUI(){
   }
   $('scanText').innerHTML=txt;
   var btn=$('scanBtn');
-  btn.textContent=scanState.running?'Stop':'Check again';
+  btn.textContent=scanState.running?'Stop':(pending?'Continue':'Check again');
   var tg=$('scanToggle');
   tg.setAttribute('aria-pressed',showDirectOnlyEl.checked?'true':'false');
   tg.textContent=showDirectOnlyEl.checked?'✔ Only working':'Only working';
@@ -1285,6 +1304,7 @@ function startScan(force){
     u=allChannels[i].url;
     if(!scanOkTs[u]&&!scanFailTs[u])q.push(allChannels[i]);
   }
+  if(q.length>SCAN_MAX)q=q.slice(0,SCAN_MAX);
   if(!q.length){scanUI();return;}
   var tok=++scanState.token;
   scanState.running=true;scanState.stop=false;
@@ -1342,6 +1362,7 @@ function cardHTML(c,i,isRail){
   var init=initialOf(c.name),fav=favSet.has(c.url);
   var eg=epgForChannel(c);
   var meta=c.group+(eg&&eg.now?' · ▶ '+eg.now.title:'');
+  if(c.labels&&c.labels.length)meta+=' · ⚠ '+c.labels.join(', ');
   return '<div class="card" style="--i:'+(i%GRID_PAGE)+'" data-url="'+esc(c.url)+'" tabindex="0" role="button" aria-label="Play '+esc(c.name)+'">'
     +'<div class="thumb">'+imgTag(c.logo,init)+'<span class="live-badge"><i></i>LIVE</span><span class="play-ov" aria-hidden="true">▶</span></div>'
     +(isRail?'<button class="mini-x" data-recentx="1" aria-label="Remove from history">✕</button>':'')
@@ -1520,7 +1541,7 @@ function proxyLabel(p){if(!p)return 'direct';if(p.indexOf('allorigins')>0)return
 function buildProxiedUrl(url,prefix){
   var pre=prefix||getProxyPrefix();if(!pre)return url;
   if(url.indexOf(pre)===0)return url;
-  if(pre.indexOf('?url=')>0||pre.indexOf('?u=')>0)return pre+encodeURIComponent(url);
+  if(pre.indexOf('?url=')>0||pre.indexOf('?u=')>0)return pre+encodeURIComponent(url)+proxyExtra;
   var l=pre.slice(-1);if(l!=='/'&&l!=='?'&&l!=='=')pre+='/';
   return pre+url;
 }
@@ -1543,7 +1564,13 @@ function rewriteManifest(text,manifestUrl,prefix){
   }
   return out.join('\n');
 }
-var BaseLoader=null,ProxyLoader=null;
+var BaseLoader=null,ProxyLoader=null,proxyExtra='';
+function proxyExtraFor(ch){
+  var e='';
+  if(ch&&ch.referrer)e+='&referer='+encodeURIComponent(String(ch.referrer).slice(0,300));
+  if(ch&&ch.userAgent)e+='&ua='+encodeURIComponent(String(ch.userAgent).slice(0,300));
+  return e;
+}
 function proxyLoaderClass(){
   if(!window.Hls||!Hls.DefaultConfig||!Hls.DefaultConfig.loader)return null;
   if(!ProxyLoader){
@@ -1723,6 +1750,7 @@ function failoverTo(ch,prefix,msg,attempt){
     toast(msg);
     try{video.pause();video.removeAttribute('src');video.load();}catch(e){}
     setMeta(ch,true);
+    proxyExtra=proxyExtraFor(ch);
     startStream(buildProxiedUrl(ch.url,prefix),ch,true,attempt);
   },250);
 }
@@ -2327,6 +2355,7 @@ function playChannel(ch,forceProxy){
   var prefix=getProxyPrefix();
   var useProxy=!!forceProxy&&!!prefix;
   usedPrefix=useProxy?prefix:'';
+  proxyExtra=useProxy?proxyExtraFor(ch):'';
   if(useProxy)triedPrefixes.push(prefix);
   var playUrl=useProxy?buildProxiedUrl(ch.url,prefix):ch.url;
   $('currentName').textContent=ch.name;
@@ -2894,10 +2923,9 @@ function maybeOfferResume(){
   if(!ch)return;
   toast('Resume “'+ch.name+'”?',{action:'▶ Play',fn:function(){showView('watch');playChannel(ch);},ms:6500});
 }
-function loadText(text,label,token){
-  var parsed=parseM3U(text);
+function installChannels(channels,label,epgUrl){
   stopScan();
-  allChannels=parsed.channels;
+  allChannels=channels||[];
   buildChanIndex();
   failedSet.clear();
   group='';
@@ -2921,24 +2949,123 @@ function loadText(text,label,token){
     moreBtn.style.display='none';
     updateCounts();
     scanUI();
-    return parsed;
+    return {channels:[]};
   }
   applyFilters(true);
   scanUI();
   maybeAutoScan();
   toast(allChannels.length+' channels loaded');
   showView('home');
-  if(parsed.epgUrl&&!sget('iptv_epg')){
-    epgInput.value=parsed.epgUrl;
-    sset('iptv_epg',parsed.epgUrl);
-    loadEPG(parsed.epgUrl,true);
+  if(epgUrl&&!sget('iptv_epg')){
+    epgInput.value=epgUrl;
+    sset('iptv_epg',epgUrl);
+    loadEPG(epgUrl,true);
   }
   handlePendingDeepLink();
   maybeOfferResume();
+  return {channels:allChannels};
+}
+function loadText(text,label,token){
+  var parsed=parseM3U(text);
+  installChannels(parsed.channels,label,parsed.epgUrl);
   return parsed;
+}
+
+/* ---------- iptv-org API (JSON) source ----------
+   Same data as the .m3u playlists, but as JSON: adds quality, NSFW flag,
+   geo-block labels, feed/country info and the Referer/User-Agent a stream
+   may need (used when the request goes through Tuner's own proxy). */
+var API_BASE='https://iptv-org.github.io/api/';
+var CAT_NAMES={animation:'Animation',auto:'Auto',business:'Business',classic:'Classic',comedy:'Comedy',cooking:'Cooking',culture:'Culture',documentary:'Documentary',education:'Education',entertainment:'Entertainment',family:'Family',general:'General',interactive:'Interactive',kids:'Kids',legislative:'Legislative',lifestyle:'Lifestyle',movies:'Movies',music:'Music',news:'News',outdoor:'Outdoor',public:'Public',relax:'Relax',religious:'Religious',series:'Series',science:'Science',shop:'Shopping',sports:'Sports',travel:'Travel',weather:'Weather',xxx:'Adult'};
+function fetchJson(url){
+  return fetch(url,{cache:'force-cache',credentials:'omit',referrerPolicy:'no-referrer'}).then(function(r){
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return r.json();
+  });
+}
+function apiChannelName(ch,stream,feed){
+  var name=(ch&&ch.name)||stream.title||'Channel';
+  var bits=[];
+  if(feed&&feed.name&&feed.name!=='SD'&&feed.name!=='HD'&&feed.name!=='FHD')bits.push(feed.name);
+  if(stream.quality)bits.push(stream.quality);
+  if(bits.length)name+=' ('+bits.join(' · ')+')';
+  return name;
+}
+function normHeaderValue(v,key){
+  var s=String(v||'').trim();
+  if(!s)return '';
+  var marker=key==='ua'?'http-user-agent=':'http-referrer=';
+  var i=s.indexOf(marker);
+  if(i>=0)s=s.slice(i+marker.length);
+  else if(s.indexOf('#EXTVLCOPT:')===0)s=s.slice('#EXTVLCOPT:'.length);
+  return s.replace(/[\r\n\0]/g,'').trim().slice(0,250);
+}
+function loadApiSource(country){
+  if(!country)return;
+  var token=++loadToken;
+  showSkeleton();
+  loadedSource={url:API_BASE,label:'iptv-org API'};
+  toast('Downloading iptv-org data…');
+  Promise.all([
+    fetchJson(API_BASE+'streams.json'),
+    fetchJson(API_BASE+'channels.json'),
+    fetchJson(API_BASE+'logos.json'),
+    fetchJson(API_BASE+'feeds.json')
+  ]).then(function(res){
+    if(token!==loadToken)return;
+    var streams=res[0],channels=res[1],logos=res[2],feeds=res[3];
+    var chMap={},i;
+    for(i=0;i<channels.length;i++)chMap[channels[i].id]=channels[i];
+    var feedMap={};
+    for(i=0;i<feeds.length;i++)feedMap[feeds[i].channel+'|'+(feeds[i].id||'')]=feeds[i];
+    var logoMap={},logoAny={};
+    for(i=0;i<logos.length;i++){
+      var l=logos[i];
+      if(!l.channel||!l.url)continue;
+      if(l.feed){if(l.in_use!==false||!logoMap[l.channel+'|'+l.feed])logoMap[l.channel+'|'+l.feed]=l.url;}
+      if(!logoAny[l.channel])logoAny[l.channel]=l.url;
+    }
+    var out=[],skipped=0;
+    for(i=0;i<streams.length;i++){
+      var s=streams[i],u=String(s.url||'');
+      if(!/^https?:\/\//i.test(u)){skipped++;continue;}
+      var cid=s.channel||'',meta=cid?chMap[cid]:null;
+      if(country!=='world'&&(!meta||meta.country!==country))continue;
+      var feed=(cid&&s.feed)?feedMap[cid+'|'+s.feed]:null;
+      var name=apiChannelName(meta,s,feed);
+      var group='General';
+      if(meta&&meta.categories&&meta.categories.length){
+        var cid2=meta.categories[0];
+        group=CAT_NAMES[cid2]||cid2.charAt(0).toUpperCase()+cid2.slice(1);
+      }
+      var logo=(cid&&s.feed&&logoMap[cid+'|'+s.feed])||(cid?logoAny[cid]:'')||'';
+      var adult=!!(meta&&meta.is_nsfw)||/\b(xxx|porn|playboy)\b|18\+/i.test(name);
+      out.push({
+        name:name,logo:logo,group:group,
+        tvgId:cid?(cid+(s.feed?'@'+s.feed:'')):'',
+        url:u,adult:adult,
+        country:meta?meta.country:'',quality:s.quality||'',
+        labels:s.labels||[],referrer:normHeaderValue(s.referrer,'referrer'),userAgent:normHeaderValue(s.user_agent,'ua'),
+        feed:s.feed||'',channelId:cid
+      });
+    }
+    var label='iptv-org API · '+(country==='world'?'World':ccName(country));
+    installChannels(out,label,'');
+    if(skipped)toast(skipped+' non-http streams skipped');
+  }).catch(function(e){
+    if(token!==loadToken)return;
+    showLoadError(API_BASE,(e&&e.message)||'download failed');
+    toast('Could not load iptv-org data');
+  });
 }
 $('loadBtn').onclick=function(){loadUrl(urlInput.value.trim());closeSettings();};
 urlInput.addEventListener('keydown',function(e){if(e.key==='Enter'){loadUrl(urlInput.value.trim());closeSettings();}});
+$('apiLoadBtn').onclick=function(){
+  var c=$('apiCountry').value;
+  sset('iptv_api_country',c);
+  loadApiSource(c);
+  closeSettings();
+};
 $('fileInput').addEventListener('change',function(){
   var f=this.files&&this.files[0];
   if(!f)return;
@@ -2964,7 +3091,7 @@ showDirectOnlyEl.addEventListener('change',function(){setDirectOnly(showDirectOn
 $('scanToggle').addEventListener('click',function(){setDirectOnly(!showDirectOnlyEl.checked);});
 $('scanBtn').addEventListener('click',function(){
   if(scanState.running){stopScan();return;}
-  startScan(true);
+  if(scanPendingCount())startScan(false);else startScan(true);
 });
 $('favExport').onclick=function(){
   var items=Array.from(favSet).map(function(u){var c=chanByUrl[u];return {url:u,name:c?c.name:u,group:c?c.group:''};});
@@ -3166,6 +3293,12 @@ window.addEventListener('error',function(){
   try{toast('Oops — something glitched. Reload if it sticks.');}catch(e){}
 });
 urlInput.value=sget('iptv_url')||DEFAULT_URL;
+window.tunerDebug={
+  channels:function(){return allChannels;},
+  proxyUrl:function(ch){proxyExtra=proxyExtraFor(ch);return buildProxiedUrl(ch.url,getProxyPrefix());},
+  scan:function(){return {ok:Array.from(directWorksSet),fail:Array.from(directFailSet),pending:scanPendingCount(),running:scanState.running};}
+};
+try{$('apiCountry').value=sget('iptv_api_country')||'IN';}catch(e){}
 addCountryOptions(FALLBACK_COUNTRIES.map(function(f){return {code:f[0],name:f[1],flag:f[2]};}));
 addLangOptions();
 bindCards(grid);bindCards(rail);

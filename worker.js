@@ -74,6 +74,13 @@ function corsHeaders(origin, allowed) {
   return h;
 }
 
+// Header values coming from query params must not be able to inject extra
+// headers or break the request.
+function cleanHeader(value) {
+  if (!value) return '';
+  return String(value).replace(/[\r\n\0]/g, '').trim().slice(0, 300);
+}
+
 function isBlockedHost(hostname) {
   let h = String(hostname || '').toLowerCase();
   if (h.startsWith('[') || h.includes(':')) return true;
@@ -228,6 +235,13 @@ export default {
       return new Response('url too long', { status: 400, headers: cors });
     }
 
+    // Per-stream headers some providers require (iptv-org/api records them):
+    // ?referer=… sets the upstream Referer, ?ua=… the upstream User-Agent.
+    const headerOverride = {
+      referer: cleanHeader(urlObj.searchParams.get('referer')),
+      userAgent: cleanHeader(urlObj.searchParams.get('ua')),
+    };
+
     const ac = new AbortController();
     const killer = setTimeout(() => {
       try {
@@ -249,8 +263,9 @@ export default {
           const v = req.headers.get(h);
           if (v) fwd.set(h, v);
         }
-        fwd.set('User-Agent', req.headers.get('User-Agent') || 'Mozilla/5.0 (compatible; TunerProxy/2.0)');
+        fwd.set('User-Agent', headerOverride.userAgent || req.headers.get('User-Agent') || 'Mozilla/5.0 (compatible; TunerProxy/2.0)');
         fwd.set('Accept-Encoding', 'identity');
+        if (headerOverride.referer) fwd.set('Referer', headerOverride.referer);
         if (hop.authorization) fwd.set('Authorization', hop.authorization);
 
         up = await fetch(hop.url, { method, headers: fwd, redirect: 'manual', signal: ac.signal });
@@ -319,8 +334,9 @@ export default {
           const v = req.headers.get(h);
           if (v) fwd2.set(h, v);
         }
-        fwd2.set('User-Agent', req.headers.get('User-Agent') || 'Mozilla/5.0 (compatible; TunerProxy/2.0)');
+        fwd2.set('User-Agent', headerOverride.userAgent || req.headers.get('User-Agent') || 'Mozilla/5.0 (compatible; TunerProxy/2.0)');
         fwd2.set('Accept-Encoding', 'identity');
+        if (headerOverride.referer) fwd2.set('Referer', headerOverride.referer);
         if (hop.authorization) fwd2.set('Authorization', hop.authorization);
         up = await fetch(hop.url, { method: 'GET', headers: fwd2, redirect: 'manual', signal: ac.signal });
         ct = (up.headers.get('content-type') || '').toLowerCase();
