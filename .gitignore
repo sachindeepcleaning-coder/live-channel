@@ -1,0 +1,9 @@
+iptv/
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/keystore.properties
+android/keystore/
+*.log
+.DS_Store
